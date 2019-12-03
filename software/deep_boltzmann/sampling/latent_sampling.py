@@ -1,14 +1,14 @@
 __author__ = 'noe'
 
-from deep_boltzmann.util import ensure_traj
-from scipy.misc import logsumexp
+from  util import ensure_traj
+from scipy.special import logsumexp
 import numpy as np
 import keras
 
 
 def plot_latent_sampling(rc, Z, E, rclabel='Reaction coord.', maxener=100):
     import matplotlib.pyplot as plt
-    from deep_boltzmann.plot import plot_traj_hist
+    from  plot import plot_traj_hist
     plt.figure(figsize=(20, 12))
     ax1 = plt.subplot2grid((3, 4), (0, 0), colspan=3)
     ax2 = plt.subplot2grid((3, 4), (0, 3))
@@ -482,7 +482,7 @@ def sample_hybrid_zprior_xmetro(network, niter, nprior, nmetro, prior_std=1.0, n
         Energies of sampled configurations
 
     """
-    from deep_boltzmann.sampling import MetropolisGauss
+    from  sampling import MetropolisGauss
     Z = []
     X = []
     E = []

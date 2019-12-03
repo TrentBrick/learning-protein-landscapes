@@ -3,7 +3,7 @@ __author__ = 'noe'
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from deep_boltzmann.util import ensure_traj, distance_matrix_squared
+from  util import ensure_traj, distance_matrix_squared
 
 
 class HungarianMapper:

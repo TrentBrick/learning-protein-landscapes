@@ -8,5 +8,5 @@ setup(name='Deep Boltzmann Package',
       author='Frank Noe',
       author_email='frank.noe@fu-berlin.de',
       url='',
-      packages=['deep_boltzmann'],
+      packages=['deep_boltzmann', 'deep_boltzmann.models', 'deep_boltzmann.sampling','deep_boltzmann.networks'],
      )

@@ -3,7 +3,7 @@ __author__ = 'noe'
 import numpy as np
 import tensorflow as tf
 
-from deep_boltzmann.util import distance_matrix_squared
+from  util import distance_matrix_squared
 
 class ParticleDimer(object):
 

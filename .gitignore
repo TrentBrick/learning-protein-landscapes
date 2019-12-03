@@ -2,6 +2,7 @@
 arxiv
 coverletter.*
 local_*
+software/deep_boltzmann/experiments/
 
 # rescue and compiled files 
 *.lyx~

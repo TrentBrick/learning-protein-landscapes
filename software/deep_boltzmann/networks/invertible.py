@@ -3,9 +3,9 @@ import numpy as np
 import keras
 import tensorflow as tf
 
-from deep_boltzmann.networks import IndexLayer, connect, nonlinear_transform
-from deep_boltzmann.networks.util import shuffle
-from deep_boltzmann.util import ensure_traj
+from  networks import IndexLayer, connect, nonlinear_transform
+from  networks.util import shuffle
+from  util import *
 
 
 def split_merge_indices(ndim, nchannels=2, channels=None):
@@ -193,12 +193,12 @@ class CompositeLayer(object):
 
     @classmethod
     def from_dict(cls, d):
-        from deep_boltzmann.networks.util import deserialize_layers
+        from  networks.util import deserialize_layers
         transforms = deserialize_layers(d['transforms'])
         return cls(transforms)
 
     def to_dict(self):
-        from deep_boltzmann.networks.util import serialize_layers
+        from  networks.util import serialize_layers
         D = {}
         D['transforms'] = serialize_layers(self.transforms)
         return D
@@ -383,7 +383,7 @@ class InvNet(object):
     def load(cls, filename):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
-        from deep_boltzmann.util import load_obj
+        from  util import load_obj
         keras.backend.clear_session()
         D = load_obj(filename)
         prior = D['prior']
@@ -392,7 +392,7 @@ class InvNet(object):
         return InvNet(D['dim'], layers, prior=prior)
 
     def save(self, filename):
-        from deep_boltzmann.util import save_obj
+        from  util import save_obj
         D = {}
         D['dim'] = self.dim
         D['prior'] = self.prior
@@ -475,7 +475,7 @@ class InvNet(object):
         """ Returns the log likelihood of z|x assuming a Normal distribution in z
         """
         #return self.log_det_Jxz - self.dim * tf.log(std) - (0.5 / (std**2)) * tf.reduce_sum(self.output_z**2, axis=1)
-        from deep_boltzmann.util import logreg
+        from  util import logreg
         logz = logreg(self.output_z, a=0.001, tf=True)
         ll = self.log_det_Jxz \
              - (0.5 / (std**2)) * tf.reduce_sum(logz**2, axis=1) \
@@ -669,7 +669,7 @@ class EnergyInvNet(InvNet):
     def load(cls, filename, energy_model):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
-        from deep_boltzmann.util import load_obj
+        from  util import load_obj
         keras.backend.clear_session()
         D = load_obj(filename)
         prior = D['prior']
@@ -681,7 +681,7 @@ class EnergyInvNet(InvNet):
     def log_w(self, high_energy, max_energy, temperature_factors=1.0):
         """ Computes the variance of the log reweighting factors
         """
-        from deep_boltzmann.util import linlogcut
+        from  util import linlogcut
         z = self.input_z
         x = self.output_x
         # compute z energy
@@ -727,7 +727,7 @@ class EnergyInvNet(InvNet):
     def log_KL_x(self, high_energy, max_energy, temperature_factors=1.0, explore=1.0):
         """ Computes the KL divergence with respect to z|x and the Boltzmann distribution
         """
-        from deep_boltzmann.util import linlogcut
+        from  util import linlogcut
         x = self.output_x
         # compute energy
         E = self.energy_model.energy_tf(x) / temperature_factors
@@ -736,6 +736,20 @@ class EnergyInvNet(InvNet):
         #return self.log_det_Jzx + Ereg
         return -explore * self.log_det_Jzx[:, 0] + Ereg
 
+    def log_KL_x_discrete(self, batch_size, high_energy=10, max_energy=100, temperature_factors=1.0, explore=1.0):
+        # explore is responsible for how large the log determinant should be. 
+        x = self.output_x
+        b = tf.Print(batch_size, [batch_size], 'size of batch')
+        E = self.energy_model.discrete_energy_tf(x, b) 
+        E = tf.Print(E, [E], 'these are the energy rewards')
+
+        #Ereg = -linlogcut(-E, high_energy, max_energy, tf=True)
+
+        l_det = tf.Print(self.log_det_Jzx[:, 0],[self.log_det_Jzx[:, 0]], 'log determinant in loss')
+        loss = - E - tf.cast(explore * l_det, tf.float32)
+        loss_p = tf.Print(loss, [loss], 'this is the total loss')
+        return loss_p #/ batch_size
+
     def log_GaussianPriorMCMC_efficiency(self, high_energy, max_energy, metric=None, symmetric=False):
         """ Computes the efficiency of GaussianPriorMCMC from a parallel x1->z1, z2->x2 network.
 
@@ -743,7 +757,7 @@ class EnergyInvNet(InvNet):
         is computed by |x1-x2|**2
 
         """
-        from deep_boltzmann.util import linlogcut
+        from  util import linlogcut
         # define variables
         x1 = self.input_x
         x2 = self.output_x
@@ -778,7 +792,7 @@ class EnergyInvNet(InvNet):
     def log_GaussianPriorMCMC_efficiency_unsupervised(self, high_energy, max_energy, metric=None):
         """ Computes the efficiency of GaussianPriorMCMC
         """
-        from deep_boltzmann.util import linlogcut
+        from  util import linlogcut
         # prior entropy
         z = self.input_z
         H = 0.5 * tf.reduce_sum(z**2, axis=1)
@@ -806,7 +820,9 @@ class EnergyInvNet(InvNet):
             return d_0_ + d__0 + log_pacc_0_ + log_pacc__0
 
     def train_KL(self, optimizer=None, lr=0.001, epochs=2000, batch_size=1024, verbose=1, clipnorm=None,
-                 high_energy=100, max_energy=1e10, temperature=1.0, explore=1.0):
+                 high_energy=100, max_energy=1e10, temperature=1.0, explore=1.0,
+                 is_discrete=True, save_partway_inter=None,
+                experiment_dir='DidNotPutInAName'):
         if optimizer is None:
             if clipnorm is None:
                 optimizer = keras.optimizers.adam(lr=lr)
@@ -822,8 +838,13 @@ class EnergyInvNet(InvNet):
 
         def loss_KL(y_true, y_pred):
             return self.log_KL_x(high_energy, max_energy, temperature_factors=tfac, explore=explore)
+        def loss_KL_disc(y_true, y_pred):
+            return self.log_KL_x_discrete(batch_size, temperature_factors=tfac, explore=explore)
 
-        self.Tzx.compile(optimizer, loss=loss_KL)
+        if is_discrete:
+            self.Tzx.compile(optimizer, loss=loss_KL_disc)
+        else: 
+            self.Tzx.compile(optimizer, loss=loss_KL)
 
         dummy_output = np.zeros((batch_size, self.dim))
         train_loss = []
@@ -837,6 +858,15 @@ class EnergyInvNet(InvNet):
             if verbose == 1:
                 print('Epoch', e, ' loss', np.mean(train_loss_batch))
                 sys.stdout.flush()
+        
+            if save_partway_inter is not None and (e+1)%save_partway_inter==0 : 
+
+                self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
+
+                # also saving out the learning trajectory:
+                pickle.dump(np.array(train_loss), open(experiment_dir+'During_'+str(e)+'losses_train.pickle', 'wb')) 
+                
+        
         train_loss = np.array(train_loss)
 
         return train_loss
@@ -847,7 +877,9 @@ class EnergyInvNet(InvNet):
                        weight_KL=1.0, temperature=1.0, explore=1.0,
                        weight_MC=0.0, metric=None, symmetric_MC=False, supervised_MC=True,
                        weight_W2=0.0,
-                       weight_RCEnt=0.0, rc_func=None, rc_min=0.0, rc_max=1.0):
+                       weight_RCEnt=0.0, rc_func=None, rc_min=0.0, rc_max=1.0, is_discrete=True,
+                       save_partway_inter=None,
+                       experiment_dir='DidNotPutInAName'):
         import numbers
         if isinstance(temperature, numbers.Number):
             temperature = np.array([temperature])
@@ -867,6 +899,8 @@ class EnergyInvNet(InvNet):
             return -self.log_likelihood_z_normal(std=std) + reg_Jxz*self.reg_Jxz_uniform()
         def loss_KL(y_true, y_pred):
             return self.log_KL_x(high_energy, max_energy, temperature_factors=tfac, explore=explore)
+        def loss_KL_disc(y_true, y_pred):
+            return self.log_KL_x_discrete(batch_size, temperature_factors=tfac, explore=explore)
         def loss_MCEff_supervised(y_true, y_pred):
             return -self.log_GaussianPriorMCMC_efficiency(high_energy, max_energy, metric=metric, symmetric=symmetric_MC)
         def loss_MCEff_unsupervised(y_true, y_pred):
@@ -910,7 +944,10 @@ class EnergyInvNet(InvNet):
         if weight_KL > 0:
             inputs.append(self.input_z)
             outputs.append(self.output_x)
-            losses.append(loss_KL)
+            if is_discrete:
+                losses.append(loss_KL_disc)
+            else: 
+                losses.append(loss_KL)
             loss_weights.append(weight_KL)
         if weight_MC > 0:
             if self.input_z not in inputs:
@@ -990,6 +1027,14 @@ class EnergyInvNet(InvNet):
                 print(str_)
                 sys.stdout.flush()
 
+            if save_partway_inter is not None and (e+1)%save_partway_inter==0 : 
+
+                self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
+
+                # also saving out the learning trajectory:
+                pickle.dump(np.array(loss_train), open(experiment_dir+'During_'+str(e)+'losses_train.pickle', 'wb')) 
+                pickle.dump(np.array(loss_val), open(experiment_dir+'During_'+str(e)+'losses_xval.pickle', 'wb')) 
+
         return dual_model.metrics_names, np.array(loss_train), np.array(loss_val)
 
 
@@ -1005,7 +1050,7 @@ def invnet(dim, layer_types, energy_model=None, channels=None,
     energy_model : Energy model class
         Class with energy() and dim
     channels : array or None
-        Assignment of dimensions to channels (0/1 array of length ndim)
+        Assignment of dimensions xto channels (0/1 array of length ndim)
     nl_layers : int
         Number of hidden layers in the nonlinear transformations
     nl_hidden : int
