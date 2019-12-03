@@ -67,6 +67,9 @@ parser.add_argument('--dequantize', type=bool, action='store', nargs='+',
 parser.add_argument('--nl_activation_scale', type=str, action='store', nargs='+',
                     default = ['tanh'],
                     help='type of activation for scaling')
+parser.add_argument('--load_model', type=str, action='store', nargs='+',
+                    default = ['None'],
+                    help='give the correct path to load in the model')
 parser.add_argument('--random_seed', type=int, action='store', nargs='+',
                     default = [27],
                     help='the random seed used')

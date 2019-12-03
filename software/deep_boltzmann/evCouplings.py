@@ -45,7 +45,7 @@ temperature = 1.0, explore = 1.0, latent_std=1.0,
 KL_weight=1.0, ML_weight=0.1, model_architecture = 'NNNNS', nl_activation ='tanh', 
 nl_activation_scale = 'tanh', verbose=True, random_seed=27, 
 experiment_base_name='didnt_set_exp_name', 
-save_partway_inter=None, KL_only=False, dequantize=True):
+save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
 
     start_time = time.time()
 
@@ -56,7 +56,7 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     # Experiment save name!
     tf.random.set_random_seed(random_seed)
     np.random.seed(random_seed)
-    date_time = str(datetime.now()).replace(' ', '_')
+    date_time = str(datetime.now()).replace(' ', '_').replace(':', '_')
     # used to save the policy and its outputs. 
     experiment_name = experiment_base_name+"rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_model_architecture-%s_ML_weight-%s_KL_weight-%s_explore%s_temperature-%s_s_time-%s" % (
         random_seed, epochsML, epochsKL, 
@@ -84,7 +84,7 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     AA_num=N
     for seq in enc_seqs:
         oh.append(onehot(seq,N))
-    oh=np.asarray(oh)
+    oh=np.asarray(oh).reshape(len(oh), -1)
 
     print('the size of oh', oh.shape)
 
@@ -113,82 +113,26 @@ save_partway_inter=None, KL_only=False, dequantize=True):
 
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
-    '''plt.figure()
-    plot_potential(AA_num, target_seq, gen_model.energy, orientation='horizontal', pos1=5, pos2=10)
-    #plt.show()
-    plt.gcf().savefig(experiment_dir+'EnergyPotentialPlot.png', dpi=250)
-'''
-    
+    if dequantize:
+        samp_seqs = single_mut_profile(enc_seqs, h, J, AA) # samp seqs are now onehot. 
+        samp_seqs = samp_seqs.reshape(samp_seqs.shape[0], -1)
+        scores = gen_model.energy(samp_seqs)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)
 
-    '''
-    # simulation data
-    nsteps = 1000
-    # starting positions
-    I = np.eye(AA_num) 
+        scores = exp_hamiltonians(samp_seqs, J, h)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_cont_Dist.png', dpi=250)
 
-    def make_rand_starter():
-        rand_starter = []
-        for i in range(L):
-            rand_starter.append( I[np.random.randint(0,20,1),:] )
-        rand_starter = np.asarray(rand_starter).flatten().reshape(1,-1)
-        return rand_starter
-        
-    x0_left = make_rand_starter()
+        oh = samp_seqs
 
-    x0_right = make_rand_starter()
-
-    sampler = MetropolisGauss(gen_model, x0_left, noise=5, 
-                            stride=5, mapper=None, is_discrete=True, AA_num=AA_num)
-    #mapper=HardMaxMapper() but now I have discrete actions so dont need. 
-    sampler.run(nsteps)
-    traj_left = sampler.traj.copy()
-
-    sampler.reset(x0_left)
-    sampler.run(nsteps)
-    traj_left_val = sampler.traj.copy()
-
-    sampler.reset(x0_right)
-    sampler.run(nsteps)
-    traj_right = sampler.traj.copy()
-
-    sampler.reset(x0_right)
-    sampler.run(nsteps)
-    traj_right_val = sampler.traj.copy()
-
-    # left is blue
-    plot_mcmc(traj_left, traj_right, AA_num, pos=0) # pos is for x0 or x1
-    #plt.show()
-    plot_mcmc(traj_left, traj_right, AA_num, pos=1)
-    #plt.show()
-
-    # because of the discreet space, it is too hard to move? 
-    # reward for the blue line,
-    # the energy states present in over time
-    plt.plot(np.arange(traj_left.shape[0]), gen_model.energy(traj_left), color='blue', label='left')
-    plt.plot(np.arange(traj_right.shape[0]), gen_model.energy(traj_right), color='red', label='right')
-    plt.ylabel('Energy')
-    plt.xlabel('Time / steps')
-    plt.legend()
-    #plt.show()
-
-    both_traj = [traj_left, traj_right]
-    names = ['left', 'right']
-    for ind, traj in enumerate(both_traj):
-        x0 = vect_to_aa_ind(traj, AA_num=AA_num,pos=0)
-        x1 = vect_to_aa_ind(traj, AA_num=AA_num,pos=1)
-        plt.scatter(x0,x1, alpha=0.2, label='Trajectory - ' + names[ind] )
-        
-    plt.xlim([0,20])
-    plt.ylim([0,20])
-    plt.legend()
-    #plt.show()
-
-    x = np.vstack([traj_left, traj_right])
-    xval = np.vstack([traj_left_val, traj_right_val])
-
-    #x = traj_left[-50:,:]
-    #xval= traj_left[-50:,:]
-    '''
+    '''else: # this takes a very long time to compute!!!
+        scores = gen_model.energy(enc_seqs)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)'''
 
     num_train_and_test = 5000
     # without replacement this ensures that they are different
@@ -196,13 +140,9 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     rand_inds = np.random.choice(np.arange(oh.shape[0]), num_train_and_test, replace=False)
     train_set = rand_inds[: (num_train_and_test//2) ]
     test_set = rand_inds[ (num_train_and_test//2): ]
-    x = oh[train_set, :,:]
-    x = x.reshape(x.shape[0], -1)
+    x = oh[train_set, :]
 
-    xval = oh[test_set, :,:]
-    xval = xval.reshape(xval.shape[0], -1)
-
-    gen_model = EVCouplingsGenerator(L, AA, h, J)
+    xval = oh[test_set, :]
 
     network = invnet(gen_model.dim, model_architecture, gen_model, nl_layers=5, nl_hidden=200, 
                                 nl_activation=nl_activation)#, nl_activation_scale=nl_activation_scale)

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from evcouplings import align
 from scipy.stats import gaussian_kde
 from evcouplings.couplings import CouplingsModel
-
+from scipy.special import softmax
 '''
 Contents:
     - scripts to load biological data types into dataframes
@@ -663,6 +663,21 @@ def encode_aa(seq, a2n):
     '''numerically encode string'''
     aas = set(a2n.keys())
     return([a2n[a] if (a in aas) else a2n['-'] for a in seq])
+
+def single_mut_profile(seqs, h, J, AA):
+    # load model parameters
+    oh = []
+    for s in seqs:
+        x_temp = onehot(s, AA)
+        oh.append(x_temp)
+    oh = np.asarray(oh)
+    #h,J = model.h_i, model.J_ij.transpose(0, 2, 1, 3)
+    J = J.transpose(0,2,1,3)
+    # total energy contribution to each site i (hia + sum_j[Jia,jb])
+    PW_i = h + np.einsum('likj,nkj->nli', J, oh)/2
+    softm = softmax(PW_i, axis=-1)
+    
+    return softm
 
 def onehot_fa(fa):
     '''convert sequences to fasta'''

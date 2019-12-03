@@ -97,6 +97,16 @@ class EVCouplingsGenerator(object):
 
         return energies
 
+def exp_hamiltonians(seqs, J, h):
+    if len(seqs.shape) ==3:
+        seqs = seqs.reshape(seqs.shape[0], -1) # in case the onehots arent already flat. 
+    J = np.moveaxis(J, 1,2)
+    J = J.reshape(seqs.shape[-1], seqs.shape[-1])
+    h = h.reshape(-1)
+    #print(J.shape, h.shape, seqs.shape)
+    H = ((seqs.T*(J@seqs.T))/2 ).T.sum(1) + seqs@h
+    return H # before it was an array of an array. 
+
 
 def hamiltonians(sequences, J_ij, h_i):
     """

@@ -45,7 +45,7 @@ temperature = 1.0, explore = 1.0, latent_std=1.0,
 KL_weight=1.0, ML_weight=0.1, model_architecture = 'NNNNS', nl_activation ='tanh', 
 nl_activation_scale = 'tanh', verbose=True, random_seed=27, 
 experiment_base_name='didnt_set_exp_name', 
-save_partway_inter=None, KL_only=False, dequantize=True):
+save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
 
     start_time = time.time()
 
@@ -56,7 +56,7 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     # Experiment save name!
     tf.random.set_random_seed(random_seed)
     np.random.seed(random_seed)
-    date_time = str(datetime.now()).replace(' ', '_')
+    date_time = str(datetime.now()).replace(' ', '_').replace(':', '_')
     # used to save the policy and its outputs. 
     experiment_name = experiment_base_name+"rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_ML_weight-%s_KL_weight-%s_explore%s_temperature-%s_s_time-%s" % (
         random_seed, epochsML, epochsKL, 
@@ -87,7 +87,7 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     target_seq = enc_seqs[0]
     AA_num=N
     for seq in enc_seqs:
-        oh.append(onehot(seq,N))
+        oh.append(onehot(seq,AA_num))
     oh=np.asarray(oh)
 
     print('the size of oh', oh.shape)
@@ -232,39 +232,36 @@ save_partway_inter=None, KL_only=False, dequantize=True):
 
     samp_seqs = np.asarray(samp_seqs).reshape(rand_samples, -1)
 
-    '''if dequantize:
-
-        def make_oh(model):
-            fa_chars = ''.join(model.alphabet)
-            oh_mat = dict(zip(fa_chars, np.eye(len(fa_chars))))
-            return oh_mat
-
-        one_hot_mat = make_oh(evc_model)
-        def single_mut_profile(model, target_seq):
-            # load model parameters
-            x = one_hot(target_seq)
-            h,J = model.h_i, model.J_ij.transpose(0, 2, 1, 3)
-            # total energy contribution to each site i (hia + sum_j[Jia,jb])
-            PW_i = h + np.einsum('likj,kj->li', J, x)/2
-            # subtract energy contributions from wt aa
-            PW_sm = PW_i.T - np.einsum('li,li->li', PW_i, x).sum(axis=1)
-            # softmax the columns
-            PW_p = PW_sm + np.einsum('li,li->li', PW_i, x).sum() # add back the wt baseline
-            PW_p = np.exp(PW_p + 10**-8)
-            PW_p = PW_p / PW_p.sum(axis=0)
-            return PW_p, PW_sm'''
+    if dequantize:
+        samp_seqs = single_mut_profile(samp_seqs, h, J, AA_num) # samp seqs are now onehot. 
     
-    scores = gen_model.energy(samp_seqs)
-    plt.figure()
-    plt.hist(scores, bins=250)
-    plt.gcf().savefig(experiment_dir+'TrainingSequencesDist.png', dpi=250)
+        samp_seqs = samp_seqs.reshape(samp_seqs.shape[0], -1)
+        scores = gen_model.energy(samp_seqs)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)
 
-    oh = []
-    #N=20
-    for seq in samp_seqs:
-        #print(seq.shape)
-        oh.append(onehot(seq,AA))
-    oh=np.asarray(oh)
+        scores = exp_hamiltonians(samp_seqs, J, h)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_cont_Dist.png', dpi=250)
+
+        oh = samp_seqs
+
+    else: 
+        scores = gen_model.energy(samp_seqs)
+        plt.figure()
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)
+
+        oh = []
+        #N=20
+        for seq in samp_seqs:
+            #print(seq.shape)
+            oh.append(onehot(seq,AA_num))
+        oh=np.asarray(oh).reshape(oh.shape[0], -1)
+
+    print('shape of the one hots to take', oh.shape)
 
     num_train_and_test = 10000 
     # without replacement this ensures that they are different
@@ -272,18 +269,23 @@ save_partway_inter=None, KL_only=False, dequantize=True):
     rand_inds = np.random.choice(np.arange(oh.shape[0]), num_train_and_test, replace=False)
     train_set = rand_inds[: (num_train_and_test//2) ]
     test_set = rand_inds[ (num_train_and_test//2): ]
-    x = oh[train_set, :,:]
-    x = x.reshape(x.shape[0], -1)
+    x = oh[train_set, :]
 
-    xval = oh[test_set, :,:]
-    xval = xval.reshape(xval.shape[0], -1)
+    xval = oh[test_set, :]
 
-    print(x.shape)
+    print('shape of training data x', x.shape)
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
     network = invnet(gen_model.dim, model_architecture, gen_model, nl_layers=5, nl_hidden=200, 
-                                nl_activation=nl_activation)#, nl_activation_scale=nl_activation_scale)
+                                    nl_activation=nl_activation)#, nl_activation_scale=nl_activation_scale)
 
+    if load_model != 'None':
+        #keras.backend.clear_session()
+        #gen_model = EVCouplingsGenerator(L, AA, h, J)
+        network = network.load('experiments/'+load_model)
+        #gen_model = network.
+        #keras.backend.clear_session()
+        
     network1 = network.train_ML(x, xval=xval, lr=lr, std=latent_std, epochs=epochsML, batch_size=batchsize_ML, 
                                                 verbose=verbose)
 

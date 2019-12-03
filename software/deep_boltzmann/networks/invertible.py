@@ -402,6 +402,7 @@ class InvNet(object):
             d['type'] = l.__class__.__name__
             layerdicts.append(d)
         D['layers'] = layerdicts
+        D['energy_model'] = self.energy_model
         save_obj(D, filename)
 
     def connect_xz(self, x):
@@ -666,7 +667,7 @@ class EnergyInvNet(InvNet):
         super().__init__(energy_model.dim, layers, prior=prior)
 
     @classmethod
-    def load(cls, filename, energy_model):
+    def load(cls, filename):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
         from  util import load_obj
@@ -675,7 +676,7 @@ class EnergyInvNet(InvNet):
         prior = D['prior']
         layerdicts = D['layers']
         layers = [eval(d['type']).from_dict(d) for d in layerdicts]
-        return EnergyInvNet(energy_model, layers, prior=prior)
+        return EnergyInvNet(D['energy_model'], layers, prior=prior)
 
     # TODO: This is only implemented for the normal prior.
     def log_w(self, high_energy, max_energy, temperature_factors=1.0):
