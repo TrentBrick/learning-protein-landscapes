@@ -58,7 +58,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
     np.random.seed(random_seed)
     date_time = str(datetime.now()).replace(' ', '_').replace(':', '_')
     # used to save the policy and its outputs. 
-    experiment_name = experiment_base_name+"rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_ML_weight-%s_KL_weight-%s_explore%s_temperature-%s_s_time-%s" % (
+    experiment_name = experiment_base_name+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_ML_weight-%s_KL_weight-%s_explore%s_temperature-%s_s_time-%s" % (
         random_seed, epochsML, epochsKL, 
         lr, nl_activation, model_architecture, ML_weight, KL_weight, 
         explore, temperature, date_time )
@@ -118,83 +118,15 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
     plt.hist(hamiltonians(enc_seqs, J, h), bins=100) # used to be oh
     #plt.show()
     plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=250)
-    
+    plt.close()
+
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
     plt.figure()
     plot_potential(AA_num, target_seq, gen_model.energy, orientation='horizontal', pos1=0, pos2=1)
     #plt.show()
     plt.gcf().savefig(experiment_dir+'EnergyPotentialPlot.png', dpi=250)
-    
-    '''
-    # simulation data
-    nsteps = 1000
-    # starting positions
-    I = np.eye(AA_num) 
-
-    def make_rand_starter():
-        rand_starter = []
-        for i in range(L):
-            rand_starter.append( I[np.random.randint(0,20,1),:] )
-        rand_starter = np.asarray(rand_starter).flatten().reshape(1,-1)
-        return rand_starter
-        
-    x0_left = make_rand_starter()
-
-    x0_right = make_rand_starter()
-
-    sampler = MetropolisGauss(gen_model, x0_left, noise=5, 
-                            stride=5, mapper=None, is_discrete=True, AA_num=AA_num)
-    #mapper=HardMaxMapper() but now I have discrete actions so dont need. 
-    sampler.run(nsteps)
-    traj_left = sampler.traj.copy()
-
-    sampler.reset(x0_left)
-    sampler.run(nsteps)
-    traj_left_val = sampler.traj.copy()
-
-    sampler.reset(x0_right)
-    sampler.run(nsteps)
-    traj_right = sampler.traj.copy()
-
-    sampler.reset(x0_right)
-    sampler.run(nsteps)
-    traj_right_val = sampler.traj.copy()
-
-    # left is blue
-    plot_mcmc(traj_left, traj_right, AA_num, pos=0) # pos is for x0 or x1
-    #plt.show()
-    plot_mcmc(traj_left, traj_right, AA_num, pos=1)
-    #plt.show()
-
-    # because of the discreet space, it is too hard to move? 
-    # reward for the blue line,
-    # the energy states present in over time
-    plt.plot(np.arange(traj_left.shape[0]), gen_model.energy(traj_left), color='blue', label='left')
-    plt.plot(np.arange(traj_right.shape[0]), gen_model.energy(traj_right), color='red', label='right')
-    plt.ylabel('Energy')
-    plt.xlabel('Time / steps')
-    plt.legend()
-    #plt.show()
-
-    both_traj = [traj_left, traj_right]
-    names = ['left', 'right']
-    for ind, traj in enumerate(both_traj):
-        x0 = vect_to_aa_ind(traj, AA_num=AA_num,pos=0)
-        x1 = vect_to_aa_ind(traj, AA_num=AA_num,pos=1)
-        plt.scatter(x0,x1, alpha=0.2, label='Trajectory - ' + names[ind] )
-        
-    plt.xlim([0,20])
-    plt.ylim([0,20])
-    plt.legend()
-    #plt.show()
-
-    x = np.vstack([traj_left, traj_right])
-    xval = np.vstack([traj_left_val, traj_right_val])
-
-    #x = traj_left[-50:,:]
-    #xval= traj_left[-50:,:]
-    '''
+    plt.close()
 
     ## Generating data in proportion to the boltzmann dist. 
 
@@ -240,12 +172,13 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)
-
+        plt.close()
         scores = exp_hamiltonians(samp_seqs, J, h)
+
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_cont_Dist.png', dpi=250)
-
+        plt.close()
         oh = samp_seqs
 
     else: 
@@ -253,7 +186,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)
-
+        plt.close()
         oh = []
         #N=20
         for seq in samp_seqs:
@@ -274,6 +207,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
     xval = oh[test_set, :]
 
     print('shape of training data x', x.shape)
+    keras.backend.clear_session()
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
     network = invnet(gen_model.dim, model_architecture, gen_model, nl_layers=5, nl_hidden=200, 
@@ -282,27 +216,30 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
     if load_model != 'None':
         #keras.backend.clear_session()
         #gen_model = EVCouplingsGenerator(L, AA, h, J)
-        network = network.load('experiments/'+load_model)
+        network = network.load('experiments/'+load_model, gen_model)
         #gen_model = network.
         #keras.backend.clear_session()
         
-    network1 = network.train_ML(x, xval=xval, lr=lr, std=latent_std, epochs=epochsML, batch_size=batchsize_ML, 
-                                                verbose=verbose)
+    if epochsML >0:
+        network1 = network.train_ML(x, xval=xval, lr=lr, std=latent_std, epochs=epochsML, batch_size=batchsize_ML, 
+                                                    verbose=verbose)
 
-    print('done with ML training')
-    sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=1.0, nsample=10000)
+        print('done with ML training')
+        sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=1.0, nsample=10000)
 
-    plt.figure()
-    plt.hist(energy_x, bins=100)
-    plt.gcf().savefig(experiment_dir+'PostML_GeneratedEnergies.png', dpi=250)
+        plt.figure()
+        plt.hist(energy_x, bins=100)
+        plt.gcf().savefig(experiment_dir+'PostML_GeneratedEnergies.png', dpi=250)
+        plt.close()
+        plt.figure()
+        plt.plot(network1.history['loss'], label='training')
+        plt.plot(network1.history['val_loss'], label='validation')
+        plt.legend()
+        plt.gcf().savefig(experiment_dir+'PostML_LossCurves.png', dpi=250)
+        plt.close()
+        network.save(experiment_dir+'Model_Post_ML_Training.tf')
 
-    plt.figure()
-    plt.plot(network1.history['loss'], label='training')
-    plt.plot(network1.history['val_loss'], label='validation')
-    plt.legend()
-    plt.gcf().savefig(experiment_dir+'PostML_LossCurves.png', dpi=250)
-
-    network.save(experiment_dir+'Model_Post_ML_Training.tf')
+        pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
 
     if KL_only:
         network2 = network.train_KL(epochs=epochsKL, lr=lr, batch_size=batchsize_KL, temperature=temperature, explore=explore, verbose=1,
@@ -313,7 +250,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         plt.plot(network1.history['val_loss'], label='validation')
         plt.legend()
         plt.gcf().savefig(experiment_dir+'PostKL_LossCurves.png', dpi=250)
-    
+        plt.close()
     else: 
         network2 = network.train_flexible(x, xval=xval, lr=lr, std=latent_std, epochs=epochsKL, batch_size=batchsize_KL, 
                                                             weight_ML=ML_weight, weight_KL=KL_weight, weight_MC=0.0, weight_W2=0.0,
@@ -326,15 +263,15 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         plt.figure()
         plt.plot(network2[1][:,0])
         plt.gcf().savefig(experiment_dir+'PostKL_Overall_LossCurve.png', dpi=250)
-
+        plt.close()
         plt.figure()
         plt.plot(network2[1][:,1])
         plt.gcf().savefig(experiment_dir+'PostKL_J_LossCurve.png', dpi=250)
-
+        plt.close()
         plt.figure()
         plt.plot(network2[1][:,2])
         plt.gcf().savefig(experiment_dir+'PostKL_KL_LossCurve.png', dpi=250)
-
+        plt.close()
         '''plt.figure()
         plot_convergence(network1, network2, 0, 2)
         #plt.show()
@@ -343,7 +280,6 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
 
     network.save(experiment_dir+'Model_Post_KL_Training.tf')
 
-    pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
     pickle.dump(network2, open(experiment_dir+'losses_KL.pickle','wb'))
 
     sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=1.0, nsample=10000)
@@ -352,6 +288,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
     plt.hist(energy_x, bins=100)
     #plt.show()
     plt.gcf().savefig(experiment_dir+'GeneratedEnergies.png', dpi=250)
+    plt.close()
 
     total_time = time.time() - start_time
     print('======== total time for this run in minutes', total_time/60)

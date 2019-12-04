@@ -1,3 +1,8 @@
+import matplotlib
+import platform
+if platform.system() == 'Darwin':
+    matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 import sys
 import numpy as np
 import keras
@@ -380,11 +385,12 @@ class InvNet(object):
             self.TzxJ = keras.models.Model(inputs=self.input_z, outputs=[self.output_x, self.log_det_zx])
 
     @classmethod
-    def load(cls, filename):
+    def load(cls, filename, clear_session=False):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
         from  util import load_obj
-        keras.backend.clear_session()
+        if clear_session:
+            keras.backend.clear_session()
         D = load_obj(filename)
         prior = D['prior']
         layerdicts = D['layers']
@@ -402,7 +408,7 @@ class InvNet(object):
             d['type'] = l.__class__.__name__
             layerdicts.append(d)
         D['layers'] = layerdicts
-        D['energy_model'] = self.energy_model
+        #D['energy_model'] = {'L': self.L, 'AA_num': self.energy_model.AA_num, ''}
         save_obj(D, filename)
 
     def connect_xz(self, x):
@@ -667,16 +673,17 @@ class EnergyInvNet(InvNet):
         super().__init__(energy_model.dim, layers, prior=prior)
 
     @classmethod
-    def load(cls, filename):
+    def load(cls, filename, energy_model, clear_session=False):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
         from  util import load_obj
-        keras.backend.clear_session()
+        if clear_session:
+            keras.backend.clear_session()
         D = load_obj(filename)
         prior = D['prior']
         layerdicts = D['layers']
         layers = [eval(d['type']).from_dict(d) for d in layerdicts]
-        return EnergyInvNet(D['energy_model'], layers, prior=prior)
+        return EnergyInvNet(energy_model, layers, prior=prior)
 
     # TODO: This is only implemented for the normal prior.
     def log_w(self, high_energy, max_energy, temperature_factors=1.0):
@@ -863,6 +870,14 @@ class EnergyInvNet(InvNet):
             if save_partway_inter is not None and (e+1)%save_partway_inter==0 : 
 
                 self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
+
+                sample_z, sample_x, energy_z, energy_x, log_w = self.sample(temperature=1.0, nsample=10000)
+
+                plt.figure()
+                plt.hist(energy_x, bins=100)
+                #plt.show()
+                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'.png', dpi=250)
+                plt.close()
 
                 # also saving out the learning trajectory:
                 pickle.dump(np.array(train_loss), open(experiment_dir+'During_'+str(e)+'losses_train.pickle', 'wb')) 

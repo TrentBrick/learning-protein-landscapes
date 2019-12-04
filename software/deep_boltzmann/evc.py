@@ -11,7 +11,8 @@ class EVCouplingsGenerator(object):
         self.L = protein_length
         self.h = h
         self.J =J
-        self.h_tf = tf.reshape(tf.constant(h), [-1])#tf.expand_dims(tf.reshape(tf.constant(h), [-1]), 1) 
+        self.h_tf = tf.reshape(tf.constant(h), [-1])
+        #tf.expand_dims(tf.reshape(tf.constant(h), [-1]), 1)
         J_tf = tf.constant(J)
         J_tf = tf.transpose(J, [0,2,1,3])
         J_tf = tf.reshape(J_tf,(protein_length*aa_num,protein_length*aa_num))
@@ -36,11 +37,11 @@ class EVCouplingsGenerator(object):
                 evh = hamiltonians(data, self.J, self.h)[:,0]
         else: 
             
+            
             '''evh = tf.squeeze(tf.reduce_sum(data * tf.matmul(data, self.J_tf), axis=-1) /2) + tf.squeeze(tf.matmul(data, self.h_tf))
-            evh =tf.Print(evh, [evh], 'shape of the evh')
-            #print(evh)
-            evh = tf.reduce_sum(evh) # not sure why I need to have this in here. 
-            #evh = tf.expand_dims(evh, 1)'''
+            #evh =tf.Print(evh, [evh], 'printing the evh again ')
+            evh = tf.reduce_sum(evh)'''
+            
             xJ_batch = tf.einsum('nl,lk->nlk', data, self.J_tf)
             xJx_batch = tf.einsum('nl,nlk->nlk', data, tf.transpose(xJ_batch, perm=(0,2,1)))
             evh = tf.reduce_sum(xJx_batch,axis=(-1,-2))/2 
