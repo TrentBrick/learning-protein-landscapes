@@ -3,24 +3,33 @@ from sklearn.model_selection import ParameterGrid
 import copy
 import os
 
-parser = argparse.ArgumentParser(description='Taking commands for EVCouplings')
-parser.add_argument('run_model', type=str, action='store', nargs=1, 
-                    help='select the model run script to use for training')
-parser.add_argument('experiment_base_name', type=str, action='store', nargs=1,
-                    help='the string that goes at the front of all the save files')
-parser.add_argument('--epochsML', type=int, action='store', nargs='+',
+parser = argparse.ArgumentParser(description='Taking commands for the Protein Generator')
+parser.add_argument('experiment_base_name', type=str, action='store', nargs=1, 
+                    help='Name to use for the experiment directory of outputs')
+parser.add_argument('--run_model', type=str, action='store', nargs='+', 
+                    default=['evCouplings.py'],
+                    help='select the model run script to use for training. Currently only EV Couplings. ')
+parser.add_argument('--protein_length', type=int, action='store', nargs='+',
+                    default = [0],
+                    help='Can trim the size of the protein loaded in for \
+                        faster testing and training. 0 means no trimming')
+parser.add_argument('--MLepochs', type=int, action='store', nargs='+',
                     default = [300],
-                    help='Number of Epochs for pure ML training')
-parser.add_argument('--epochsKL', type=int, action='store', nargs='+',
+                    help='Number of Epochs for pure ML training. If set to 0 then it skips ML training')
+parser.add_argument('--KLepochs', type=int, action='store', nargs='+',
                     default = [500],
                     help='Number of Epochs for ML and KL training')
 parser.add_argument('--lr', type=float, action='store', nargs='+',
                     default = [0.001],
                     help='Learning Rate for both ML and KL')
-parser.add_argument('--batchsize_ML', type=int, action='store', nargs='+',
+parser.add_argument('--tda', type=int, action='store', nargs='+',
+                    default = [2000],
+                    help='training data amount. Will assert that it is less than the total amount of data. \
+                        Currently also splits this equally and randomly into train and test')            
+parser.add_argument('--MLbatch', type=int, action='store', nargs='+',
                     default = [32],
                     help='Batchsize for ML')
-parser.add_argument('--batchsize_KL', type=int, action='store', nargs='+',
+parser.add_argument('--KLbatch', type=int, action='store', nargs='+',
                     default = [32],
                     help='Batchsize for KL')
 parser.add_argument('--temperature', type=float, action='store', nargs='+',
@@ -32,10 +41,10 @@ parser.add_argument('--explore', type=float, action='store', nargs='+',
 parser.add_argument('--latent_std', type=float, action='store', nargs='+',
                     default = [1.0],
                     help='latent space standard deviation of the normal')
-parser.add_argument('--ML_weight', type=float, action='store', nargs='+',
+parser.add_argument('--MLweight', type=float, action='store', nargs='+',
                     default = [1.0],
                     help='Number of Epochs for pure ML training')
-parser.add_argument('--KL_weight', type=float, action='store', nargs='+',
+parser.add_argument('--KLweight', type=float, action='store', nargs='+',
                     default = [1.0],
                     help='Number of Epochs for pure ML training')
 parser.add_argument('--save_partway_inter', type=float, action='store', nargs=1,
@@ -78,7 +87,6 @@ args = parser.parse_args()
 run_model_str = args.run_model[0]
 print('Commmand line args are:', args)
 arg_dict = copy.deepcopy(vars(args))
-del arg_dict['run_model'] # because I dont need to actually pass this into the function! 
 tot_combos = 1
 for v in arg_dict.values():
     tot_combos *= len(v)
@@ -87,11 +95,11 @@ print(args.run_model)
 if run_model_str == 'evCouplings.py':
     from evCouplings import main
     func_to_call = main
-elif run_model_str == 'basic_evCouplings.py':
+'''elif run_model_str == 'basic_evCouplings.py':
     from basic_evCouplings import main
-    func_to_call = main
+    func_to_call = main'''
 for i in range(tot_combos):
     print(' ====================== Running param combo ', i, '/', tot_combos, '======================')
     print('combo of params is:', pg[i])
 
-    func_to_call( **pg[i])
+    func_to_call( pg[i])

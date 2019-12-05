@@ -28,6 +28,7 @@ from sampling import MetropolisGauss
 import seaborn as sns
 import matplotlib.pylab as plt
 from scipy.special import softmax
+import json
 
 from evc import *
 
@@ -39,118 +40,124 @@ cwd = os.getcwd()
 print('current directory', cwd)
 
 
-def main( epochsML = 200, epochsKL = 200,
-lr = 0.001, batchsize_ML = 128, batchsize_KL = 1000,
-temperature = 1.0, explore = 1.0, latent_std=1.0, 
-KL_weight=1.0, ML_weight=0.1, model_architecture = 'NNNNS', nl_activation ='tanh', 
-nl_activation_scale = 'tanh', verbose=True, random_seed=27, 
-experiment_base_name='didnt_set_exp_name', 
-save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
-
+def main(params):
+    
+    '''params['MLepochs'] = 200, params['KLepochs'] = 200,
+params['lr'] = 0.001, params['MLbatch'] = 128, params['KLbatch'] = 1000,
+params['temperature'] = 1.0, params['explore'] = 1.0, params['latent_std']=1.0, 
+params['KLweight']=1.0, params['MLweight']=0.1, params['model_architecture'] = 'NNNNS', params['nl_activation'] ='tanh', 
+params['nl_activation']_scale = 'tanh', params['verbose']=True, params['random_seed']=27, 
+params['experiment_base_name']='didnt_set_exp_name', 
+params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']=True, params['load_model']='None'):
+'''
+    # timing the entire run. 
     start_time = time.time()
 
     # taking a percentage of the total KL epochs. 
-    if save_partway_inter is not None: 
-        save_partway_inter = int(save_partway_inter*epochsKL)
+    if params['save_partway_inter'] is not None: 
+        params['save_partway_inter'] = int(params['save_partway_inter']*params['KLepochs'])
 
-    # Experiment save name!
-    tf.random.set_random_seed(random_seed)
-    np.random.seed(random_seed)
-    date_time = str(datetime.now()).replace(' ', '_').replace(':', '_')
-    # used to save the policy and its outputs. 
-    experiment_name = experiment_base_name+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_ML_weight-%s_KL_weight-%s_explore%s_temperature-%s_s_time-%s" % (
-        random_seed, epochsML, epochsKL, 
-        lr, nl_activation, model_architecture, ML_weight, KL_weight, 
-        explore, temperature, date_time )
+    # setting the random seeds
+    tf.random.set_random_seed(params['random_seed'])
+    np.random.seed(params['random_seed'])
 
-    # make a directory to save all of the outputs in: 
+    # Creating new directory to save all run outputs in
+    date_time = str(datetime.now()).replace(' ', '_').replace(':', '_') # ensures there aren't any issues saving this as a file name. 
+    experiment_name = params['experiment_base_name']+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_MLweight-%s_KLweight-%s_explore%s_temperature-%s_s_time-%s" % (
+        params['random_seed'], params['MLepochs'], params['KLepochs'], 
+        params['lr'], params['nl_activation'], params['model_architecture'], params['MLweight'], params['KLweight'], 
+        params['explore'], params['temperature'], date_time )
     os.mkdir('experiments/'+experiment_name)
     experiment_dir = 'experiments/'+ experiment_name+'/'
 
-    ######
+    # write out all of the parameters used into a text file: 
+    with open('params_used.txt', 'w') as file:
+        file.write(json.dumps(params))
+
+    # Loading in EVCouplings model 
     focus_seqs = read_fa('EVCouplingsStuff/DYR_ECOLI_1_b0.5.a2m_trimmed.fa')
     evc_model = CouplingsModel('EVCouplingsStuff/DYR.model')
-    scores = evc_model.hamiltonians(list(focus_seqs['seq']))
-            
-    enc_seqs=[]
-    for seq in focus_seqs['seq']:
-        enc_seqs.append(encode_aa(seq, evc_model.alphabet_map)) 
 
-    enc_seqs = np.asarray(enc_seqs)
-    target_seq = enc_seqs[0]#encode_aa(np.char.upper(ali.matrix[0, :]), a2n)
-
-    oh = []
-    N=20 # none of these focus have gaps, else should be 21. 
-    AA_num=N
-    for seq in enc_seqs:
-        oh.append(onehot(seq,N))
-    oh=np.asarray(oh)
-
-    print('the size of oh', oh.shape)
-
-    print('calculating weights and identities')
-    N = oh.shape[0]
-    L = oh.shape[1]
-    AA = oh.shape[2]
-    #w, neighbors = msa_weights(enc_seqs, theta=0.8, pseudocount=0)
-    oh = oh.reshape(oh.shape[0], -1)
-
+    # extracting the model parameters used to determine the evolutionary hamiltonian
     h = evc_model.h_i
-    t_oh = oh[0]
-    t_oh_flat =t_oh.flatten().reshape(-1,1)
-
-    t_seq_aa = focus_seqs.loc[0, 'seq']
     J = evc_model.J_ij
 
+    if params['protein_length'] > 0:
+        h = h[0:params['protein_length'], :]
+        J = J[0:params['protein_length'], 0:params['protein_length'], :,:]
+            
+    # converting amino acids into integers and also onehots. 
+    enc_seqs=[]
+    oh = []
+    AA=h.shape[1] # number of amino acids
+    for seq in focus_seqs['seq']:
+        enc_seq = np.asarray(encode_aa(seq, evc_model.alphabet_map))
+        if params['protein_length'] > 0: 
+            enc_seq = enc_seq[:params['protein_length']]
+        enc_seqs.append(enc_seq) 
+        oh.append(onehot(enc_seq,AA))
+    enc_seqs = np.asarray(enc_seqs)
+    oh=np.asarray(oh)
+    N = oh.shape[0] # batch size
+    L = oh.shape[1] # length of the protein
+    # flattening the one hot
+    oh = oh.reshape(oh.shape[0], -1)
+
+    print('the size of oh', oh.shape)
+    
+    # plotting the distribution of natural sequences. Can be slow to run. 
     '''plt.figure()
     print('Plotting a hist of all the natural sequences energies:')
     plt.hist(hamiltonians(enc_seqs, J, h)[:,0])
     #plt.show()
     plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=250)'''
 
+    # loading in the environment class, used to score the evolutionary hamiltonians
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
-    if dequantize:
+    # set to True by default, finds a probability distribution for the most likely single mutation
+    # made to every sequence
+    if params['dequantize']:
         samp_seqs = single_mut_profile(enc_seqs, h, J, AA) # samp seqs are now onehot. 
         samp_seqs = samp_seqs.reshape(samp_seqs.shape[0], -1)
-        '''scores = gen_model.energy(samp_seqs) # still takes way too long. 
-        plt.figure()
-        plt.hist(scores, bins=250)
-        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)'''
 
+        # gets the expectation over the sequence scores and plots them to see what the training data looks like
         scores = exp_hamiltonians(samp_seqs, J, h)
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_cont_Dist.png', dpi=250)
         plt.close()
-
+        # setting the onehot to the new params['dequantize']d sequences
         oh = samp_seqs
 
+    # otherwise plot the current sequences from the training data and their distribution. 
     '''else: # this takes a very long time to compute!!!
         scores = gen_model.energy(enc_seqs)
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)'''
 
-    num_train_and_test = 5000
-    # without replacement this ensures that they are different
+    # assert that there is more data than the amount of training data requested: 
+    assert N > params['tda'], 'requested using too much training data! Lower --tda <amount of training data>'
+
     # need to have a train test split by sequence identity at some point
-    rand_inds = np.random.choice(np.arange(oh.shape[0]), num_train_and_test, replace=False)
-    train_set = rand_inds[: (num_train_and_test//2) ]
-    test_set = rand_inds[ (num_train_and_test//2): ]
+    # currently an even split between training and validation data. 
+    rand_inds = np.random.choice(np.arange(N), params['tda'], replace=False)
+    train_set = rand_inds[: (params['tda']//2) ]
+    test_set = rand_inds[ (params['tda']//2): ]
     x = oh[train_set, :]
 
     xval = oh[test_set, :]
 
-    network = invnet(gen_model.dim, model_architecture, gen_model, nl_layers=5, nl_hidden=200, 
-                                nl_activation=nl_activation)#, nl_activation_scale=nl_activation_scale)
+    network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=5, nl_hidden=200, 
+                                nl_activation=params['nl_activation'])#, params['nl_activation']_scale=params['nl_activation']_scale)
 
-    if epochsML>0:
-        network1 = network.train_ML(x, xval=xval, lr=lr, std=latent_std, epochs=epochsML, batch_size=batchsize_ML, 
-                                                    verbose=verbose)
+    if params['MLepochs']>0:
+        network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
+                                                    verbose=params['verbose'])
 
         print('done with ML training')
-        sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=1.0, nsample=10000)
+        sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=params['temperature'], nsample=5000)
 
         plt.figure()
         plt.hist(energy_x, bins=100)
@@ -167,9 +174,10 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         network.save(experiment_dir+'Model_Post_ML_Training.tf')
         #pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
 
-    if KL_only:
-        network2 = network.train_KL(epochs=epochsKL, lr=lr, batch_size=batchsize_KL, temperature=temperature, explore=explore, verbose=1,
-                                 is_discrete=True, save_partway_inter=save_partway_inter, experiment_dir=experiment_dir)
+    if params['KL_only']:
+        network2 = network.train_KL(epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
+        explore=params['explore'], verbose=params['verbose'],
+        is_discrete=True, save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir)
     
         plt.figure()
         plt.plot(network1.history['loss'], label='training')
@@ -179,12 +187,10 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
         plt.close()
 
     else: 
-        network2 = network.train_flexible(x, xval=xval, lr=lr, std=latent_std, epochs=epochsKL, batch_size=batchsize_KL, 
-                                                            weight_ML=ML_weight, weight_KL=KL_weight, weight_MC=0.0, weight_W2=0.0,
-                                                            weight_RCEnt=0.0,
-                                                            temperature=temperature, explore=explore, verbose=verbose,
-                                                            is_discrete=True,
-                                                            save_partway_inter=save_partway_inter,
+        network2 = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['KLepochs'], batch_size=params['KLbatch'], 
+                                                            weight_ML=params['MLweight'], weight_KL=params['KLweight'], weight_MC=0.0, weight_W2=0.0,
+                                                            weight_RCEnt=0.0, temperature=params['temperature'], explore=params['explore'], verbose=params['verbose'],
+                                                            is_discrete=True, save_partway_inter=params['save_partway_inter'],
                                                             experiment_dir=experiment_dir)
 
         plt.figure()
@@ -211,7 +217,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
 
     #pickle.dump(network2, open(experiment_dir+'losses_KL.pickle','wb'))
 
-    sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=1.0, nsample=10000)
+    sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature= params['temperature'], nsample=5000)
 
     plt.figure()
     plt.hist(energy_x, bins=100)
@@ -221,5 +227,7 @@ save_partway_inter=None, KL_only=False, dequantize=True, load_model='None'):
 
     total_time = time.time() - start_time
     print('======== total time for this run in minutes', total_time/60)
+    with open('time_taken.txt', 'w') as file:
+        file.write('Total time taken was: ' + str(total_time))
     
     
