@@ -10,6 +10,6 @@
 hostname
 pwd
 module load gcc/6.2.0 cuda/9.0
-srun stdbuf -oL -eL ~/anaconda3/bin/python evCouplings.py first_big_train \
- --epochsML 1000 --epochsKL 2000 --batchsize_KL 256 --ML_weight 0.1 0.5 1.5 \
- --lr 0.005  --model_architecture 'NNNNS' --save_partway_inter 0.2
+srun stdbuf -oL -eL ~/anaconda3/bin/python run.py evCouplings.py NVP_GPU_Train \
+ --epochsML 1000 --epochsKL 2000 --batchsize_KL 256 --batchsize_ML 64 --ML_weight 1.0 \
+ --lr 0.000001  --model_architecture RRRRRRRRRRR --save_partway_inter 0.1
