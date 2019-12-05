@@ -736,6 +736,7 @@ class EnergyInvNet(InvNet):
             h_max = np.argmax(h_max, axis=-1)
             h_max = np.reshape(h_max, (nsample, self.energy_model.L ) )
             # fed into energy as integers where they are then turned into onehots. 
+            print('hard max is', h_max.shape)
             hard_energy_x = self.energy_model.energy(h_max) / temperature 
             return exp_energy_x, hard_energy_x # dont want to return any of the other types of energy right now. 
         else: 
@@ -882,16 +883,16 @@ class EnergyInvNet(InvNet):
 
                 self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
 
-                exp_energy_x, hard_energy_x = network.sample(temperature=params['temperature'], nsample=5000)
+                exp_energy_x, hard_energy_x = self.sample(temperature=temperature, nsample=5000)
 
                 plt.figure()
                 plt.hist(exp_energy_x, bins=100)
-                plt.gcf().savefig(experiment_dir+'During_KL_'+str(e)+'Expectation_GeneratedEnergies.png', dpi=250)
+                plt.gcf().savefig(experiment_dir+'During_KL_Only_'+str(e)+'Expectation_GeneratedEnergies.png', dpi=250)
                 plt.close()
 
                 plt.figure()
                 plt.hist(hard_energy_x, bins=100)
-                plt.gcf().savefig(experiment_dir+'During_KL_'+str(e)+'ArgMax_GeneratedEnergies.png', dpi=250)
+                plt.gcf().savefig(experiment_dir+'During_KL_Only_'+str(e)+'ArgMax_GeneratedEnergies.png', dpi=250)
                 plt.close()
 
                 # also saving out the learning trajectory:
@@ -1062,12 +1063,16 @@ class EnergyInvNet(InvNet):
 
                 self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
 
-                sample_z, sample_x, energy_z, energy_x, log_w = self.sample(temperature=1.0, nsample=10000)
+                exp_energy_x, hard_energy_x = self.sample(temperature=temperature, nsample=5000)
 
                 plt.figure()
-                plt.hist(energy_x, bins=100)
-                #plt.show()
-                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'.png', dpi=250)
+                plt.hist(exp_energy_x, bins=100)
+                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'_Expectation.png', dpi=250)
+                plt.close()
+
+                plt.figure()
+                plt.hist(hard_energy_x, bins=100)
+                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'ArgMax_Energies.png', dpi=250)
                 plt.close()
 
                 # also saving out the learning trajectory:

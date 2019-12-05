@@ -183,7 +183,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
         plt.gcf().savefig(experiment_dir+'Post_ML_LossCurves.png', dpi=250)
         plt.close()
 
-        network.save(experiment_dir+'Model_Post__ML_Training.tf')
+        network.save(experiment_dir+'Model_Post_ML_Training.tf')
         #pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
 
     if params['KL_only']:

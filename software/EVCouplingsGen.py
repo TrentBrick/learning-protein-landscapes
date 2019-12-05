@@ -102,9 +102,10 @@ class EVCouplingsGenerator(object):
 
         # if it is monte carlo, need to softmax it. 
         # Everything else should be in a one hot format by now. 
-        if len(inp.shape) == 3 and int(inp[:,0,:].sum()) != inp.shape[0]: # the first position for all of the sequences should be 1. so their sum equals the batch size. 
+        # the additions here are to deal with small amounts of numerical instability. 
+        if len(inp.shape) == 3 and int(inp[:,0,:].sum()+0.01) != inp.shape[0]: # the first position for all of the sequences should be 1. so their sum equals the batch size. 
             inp = softmax(inp, axis=-1)
-        elif len(inp.shape) == 2 and int(inp[:,:self.AA_num].sum()) != inp.shape[0]:
+        elif len(inp.shape) == 2 and (inp[:,:self.AA_num].sum(axis=1)+0.01).astype(int).sum() != inp.shape[0]:
             inp = inp.reshape(inp.shape[0], self.L, self.AA_num)
             inp = softmax(inp, axis=-1) 
             #print('doing the softmax on this!!!', inp.shape)
@@ -114,50 +115,11 @@ class EVCouplingsGenerator(object):
             inp = inp.reshape(inp.shape[0], -1)
 
         # is the input a onehot or softmax?? 
-        assert int(inp[:,:self.AA_num].sum()) == inp.shape[0], "Either the softmax or onehot conversion has failed for this input." + str(inp.shape)
+        assert (inp[:,:self.AA_num].sum(axis=1)+0.01).astype(int).sum() == inp.shape[0], "Either the softmax or onehot conversion has failed for this input: " + str(inp.shape)
 
         H = ((inp.T*(self.J@inp.T))/2 ).T.sum(1) + inp@self.h
 
         return H 
-
-
-
-        #inputs here can be ints of sequences, onehots, pdfs that need to have a hard max. 
-        #print('input to the energy function', inp.shape)
-        if inp.shape[1] > self.L: # if it isnt a sequence of ints, then all to one hot.  
-            #print('the input to oh is', inp)
-            
-            if len(inp)>2:
-                inp = inp.reshape(inp.shape[0], -1, self.AA_num)
-            else:
-                inp = inp.reshape(-1,self.AA_num)
-            
-            inp = np.argmax(inp, axis=-1)
-            #print('argmax', inp.shape)
-            #print(inp)
-            
-        res = self.EVH(inp, old_ham=True) #np.tile(masker, 2)
-        #print('the THIS IS IN THE NORMAL ENERGY CALL. ressss',res)
-        return res
-
-
-
-        if old_ham:
-            if len(data.shape)==1: # putting brackets around it to pass into the function. 
-                data = [data] # dont know if i need this or not!
-                evh = np.asarray([hamiltonians(np.asarray(data), self.J, self.h)[0][0]]) # getting the first entry of the first array. 
-            else: 
-                evh = hamiltonians(data, self.J, self.h)[:,0]
-       
-        return evh
-    
-    '''def plot_energy(self, axis=None, temperature=1.0):
-        """ Plots a histogram of different energies to the standard figure """
-        
-        plt.plot(np.arange(self.AA_num), energies, linewidth=3, color='black')
-        plt.set_xlabel('proteins')
-        axis.set_ylabel('energy')
-        return energies'''
 
 def hamiltonians(seqs, J, h):
     """
