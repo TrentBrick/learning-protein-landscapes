@@ -159,8 +159,8 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
     network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=5, nl_hidden=200, 
                                 nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
-    if load_model != 'None':			
-        network = network.load('experiments/'+load_model, gen_model)		
+    if params['load_model'] != 'None':			
+        network = network.load('experiments/'+params['load_model'], gen_model)		
 
     if params['MLepochs']>0:
         network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
