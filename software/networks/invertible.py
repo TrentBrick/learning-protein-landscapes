@@ -753,7 +753,8 @@ class EnergyInvNet(InvNet):
 
         #Ereg = -linlogcut(-E, high_energy, max_energy, tf=True)
 
-        l_det = tf.Print(self.log_det_Jzx[:, 0],[self.log_det_Jzx[:, 0]], 'log determinant in loss')
+        l_det = tf.Print(self.log_det_Jzx,[self.log_det_Jzx], 'full log determinant in loss')
+        #l_det = tf.Print(l_det[:, 0],[l_det[:, 0]], 'log determinant in loss') # this was doing the equivalent of squeezing into a 1 vector. 
         loss = - E - tf.cast(explore * l_det, tf.float32)
         loss_p = tf.Print(loss, [loss], 'this is the total loss')
         return loss_p #/ batch_size
@@ -1046,6 +1047,14 @@ class EnergyInvNet(InvNet):
             if save_partway_inter is not None and (e+1)%save_partway_inter==0 : 
 
                 self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
+
+                sample_z, sample_x, energy_z, energy_x, log_w = self.sample(temperature=1.0, nsample=10000)
+
+                plt.figure()
+                plt.hist(energy_x, bins=100)
+                #plt.show()
+                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'.png', dpi=250)
+                plt.close()
 
                 # also saving out the learning trajectory:
                 pickle.dump(np.array(loss_train), open(experiment_dir+'During_'+str(e)+'losses_train.pickle', 'wb')) 

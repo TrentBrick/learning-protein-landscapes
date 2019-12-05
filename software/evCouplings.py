@@ -30,7 +30,7 @@ import matplotlib.pylab as plt
 from scipy.special import softmax
 import json
 
-from evc import *
+from EVCouplingsGen import *
 
 from evcouplings.couplings import CouplingsModel
 from EVCouplingsStuff.seq_sele import *
