@@ -1,5 +1,5 @@
 import numpy as np
-from deep_boltzmann.plot import plot_density
+from  plot import plot_density
 
 def test_xz_projection(Txz, xtrajs, rctrajs=None, subplots=None, colors=None, density=False):
     """ Projects x trajectories into z space and and plots their distribution
