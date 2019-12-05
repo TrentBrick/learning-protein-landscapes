@@ -27,7 +27,6 @@ def plot_traj_hist(traj, ax1=None, ax2=None, color='blue', ylim=None, ylabel='')
     ax2.set_ylim(ylim[0], ylim[1])
     ax2.set_xlabel('Probability')
 
-
     return ax1.get_figure(), ax1, ax2
 
 def plot_density(x, y, axis=None, bins=20, color='blue'):

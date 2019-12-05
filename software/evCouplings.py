@@ -71,7 +71,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
     experiment_dir = 'experiments/'+ experiment_name+'/'
 
     # write out all of the parameters used into a text file: 
-    with open('params_used.txt', 'w') as file:
+    with open('experiments/'+ 'params_used.txt', 'w') as file:
         file.write(json.dumps(params))
 
     # Loading in EVCouplings model 
@@ -227,7 +227,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
 
     total_time = time.time() - start_time
     print('======== total time for this run in minutes', total_time/60)
-    with open('time_taken.txt', 'w') as file:
+    with open('experiments/'+ 'time_taken.txt', 'w') as file:
         file.write('Total time taken was: ' + str(total_time))
     
     
