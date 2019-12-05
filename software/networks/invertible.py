@@ -667,9 +667,10 @@ class InvNet(object):
 
 class EnergyInvNet(InvNet):
 
-    def __init__(self, energy_model, layers, prior='normal'):
+    def __init__(self, energy_model, layers, is_discrete, prior='normal'):
         """ Invertible net where we have an energy function that defines p(x) """
         self.energy_model = energy_model
+        self.is_discrete = is_discrete
         super().__init__(energy_model.dim, layers, prior=prior)
 
     @classmethod
@@ -701,7 +702,7 @@ class EnergyInvNet(InvNet):
         log_w = -Exreg + Ez + self.log_det_Jzx[:, 0]
         return log_w
 
-    def sample(self, temperature=1.0, nsample=100000):
+    def sample(self, temperature=1.0, nsample=10000):
         """ Samples from prior distribution in x and produces generated x configurations
 
         Parameters:
@@ -727,10 +728,20 @@ class EnergyInvNet(InvNet):
         """
         sample_z, energy_z = self.sample_z(temperature=temperature, nsample=nsample, return_energy=True)
         sample_x, Jzx = self.transform_zxJ(sample_z)
-        energy_x = self.energy_model.energy(sample_x) / temperature
-        logw = -energy_x + energy_z + Jzx
-
-        return sample_z, sample_x, energy_z, energy_x, logw
+        # if is discrete then want to sample the expectation and the argmax. 
+        if self.is_discrete:
+            exp_energy_x = self.energy_model.energy(sample_x) / temperature
+            # want to arg max these sequences. Using numpy commands as .energy is in numpy rather than tensorflow. 
+            h_max = np.reshape(sample_x, (nsample, self.energy_model.L, self.energy_model.AA_num ))
+            h_max = np.argmax(h_max, axis=-1)
+            h_max = np.reshape(h_max, (nsample, self.energy_model.L ) )
+            # fed into energy as integers where they are then turned into onehots. 
+            hard_energy_x = self.energy_model.energy(h_max) / temperature 
+            return exp_energy_x, hard_energy_x # dont want to return any of the other types of energy right now. 
+        else: 
+            energy_x = self.energy_model.energy(sample_x) / temperature
+            logw = -energy_x + energy_z + Jzx
+        return sample_z, sample_x, energy_z, logw
 
     def log_KL_x(self, high_energy, max_energy, temperature_factors=1.0, explore=1.0):
         """ Computes the KL divergence with respect to z|x and the Boltzmann distribution
@@ -829,8 +840,7 @@ class EnergyInvNet(InvNet):
             return d_0_ + d__0 + log_pacc_0_ + log_pacc__0
 
     def train_KL(self, optimizer=None, lr=0.001, epochs=2000, batch_size=1024, verbose=1, clipnorm=None,
-                 high_energy=100, max_energy=1e10, temperature=1.0, explore=1.0,
-                 is_discrete=True, save_partway_inter=None,
+                 high_energy=100, max_energy=1e10, temperature=1.0, explore=1.0, save_partway_inter=None,
                 experiment_dir='DidNotPutInAName'):
         if optimizer is None:
             if clipnorm is None:
@@ -850,7 +860,7 @@ class EnergyInvNet(InvNet):
         def loss_KL_disc(y_true, y_pred):
             return self.log_KL_x_discrete(batch_size, temperature_factors=tfac, explore=explore)
 
-        if is_discrete:
+        if self.is_discrete:
             self.Tzx.compile(optimizer, loss=loss_KL_disc)
         else: 
             self.Tzx.compile(optimizer, loss=loss_KL)
@@ -872,16 +882,20 @@ class EnergyInvNet(InvNet):
 
                 self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
 
-                sample_z, sample_x, energy_z, energy_x, log_w = self.sample(temperature=1.0, nsample=10000)
+                exp_energy_x, hard_energy_x = network.sample(temperature=params['temperature'], nsample=5000)
 
                 plt.figure()
-                plt.hist(energy_x, bins=100)
-                #plt.show()
-                plt.gcf().savefig(experiment_dir+'GeneratedEnergies_During_KL_training_'+str(e)+'.png', dpi=250)
+                plt.hist(exp_energy_x, bins=100)
+                plt.gcf().savefig(experiment_dir+'During_KL_'+str(e)+'Expectation_GeneratedEnergies.png', dpi=250)
+                plt.close()
+
+                plt.figure()
+                plt.hist(hard_energy_x, bins=100)
+                plt.gcf().savefig(experiment_dir+'During_KL_'+str(e)+'ArgMax_GeneratedEnergies.png', dpi=250)
                 plt.close()
 
                 # also saving out the learning trajectory:
-                pickle.dump(np.array(train_loss), open(experiment_dir+'During_'+str(e)+'losses_train.pickle', 'wb')) 
+                pickle.dump(np.array(train_loss), open(experiment_dir+'During_KL_'+str(e)+'losses_train.pickle', 'wb')) 
                 
         
         train_loss = np.array(train_loss)
@@ -894,7 +908,7 @@ class EnergyInvNet(InvNet):
                        weight_KL=1.0, temperature=1.0, explore=1.0,
                        weight_MC=0.0, metric=None, symmetric_MC=False, supervised_MC=True,
                        weight_W2=0.0,
-                       weight_RCEnt=0.0, rc_func=None, rc_min=0.0, rc_max=1.0, is_discrete=True,
+                       weight_RCEnt=0.0, rc_func=None, rc_min=0.0, rc_max=1.0,
                        save_partway_inter=None,
                        experiment_dir='DidNotPutInAName'):
         import numbers
@@ -961,7 +975,7 @@ class EnergyInvNet(InvNet):
         if weight_KL > 0:
             inputs.append(self.input_z)
             outputs.append(self.output_x)
-            if is_discrete:
+            if self.is_discrete:
                 losses.append(loss_KL_disc)
             else: 
                 losses.append(loss_KL)
@@ -1064,7 +1078,7 @@ class EnergyInvNet(InvNet):
 
 
 def invnet(dim, layer_types, energy_model=None, channels=None,
-           nl_layers=2, nl_hidden=100, nl_activation='relu', scale=None, prior='normal'):
+           nl_layers=2, nl_hidden=100, nl_activation='relu', scale=None, prior='normal', is_discrete=True):
     """
     layer_types : str
         String describing the sequence of layers. Usage:
@@ -1140,9 +1154,9 @@ def invnet(dim, layer_types, energy_model=None, channels=None,
             layers.append(Scaling(dim, scaling_factors=scaling_factors, trainable=(scale is None)))
 
     if energy_model is None:
-        return InvNet(dim, layers, prior=prior)
+        return InvNet(dim, layers, is_discrete, prior=prior)
     else:
-        return EnergyInvNet(energy_model, layers, prior=prior)
+        return EnergyInvNet(energy_model, layers, is_discrete, prior=prior)
 
 
 

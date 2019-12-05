@@ -71,7 +71,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
     experiment_dir = 'experiments/'+ experiment_name+'/'
 
     # write out all of the parameters used into a text file: 
-    with open('experiments/'+ 'params_used.txt', 'w') as file:
+    with open(experiment_dir+ 'params_used.txt', 'w') as file:
         file.write(json.dumps(params))
 
     # Loading in EVCouplings model 
@@ -105,27 +105,34 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
 
     print('the size of oh', oh.shape)
     
-    # plotting the distribution of natural sequences. Can be slow to run. 
+    # plotting the distribution of natural sequences. As I already know what they look like I have commented this out. 
     '''plt.figure()
     print('Plotting a hist of all the natural sequences energies:')
-    plt.hist(hamiltonians(enc_seqs, J, h)[:,0])
+    plt.hist(gen_model.energy(enc_seqs))
     #plt.show()
     plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=250)'''
 
     # loading in the environment class, used to score the evolutionary hamiltonians
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
-    # set to True by default, finds a probability distribution for the most likely single mutation
+    # Save the argmax scores for the training sequences
+    plt.figure()
+    scores = gen_model.energy(enc_seqs)
+    plt.hist(scores, bins=250)
+    plt.gcf().savefig(experiment_dir+'TrainingSequences_ArgMax_Hist.png', dpi=250)
+    plt.close()
+
+    # set to True by default, finds probability distribution for the most likely single mutation
     # made to every sequence
     if params['dequantize']:
         samp_seqs = single_mut_profile(enc_seqs, h, J, AA) # samp seqs are now onehot. 
         samp_seqs = samp_seqs.reshape(samp_seqs.shape[0], -1)
 
         # gets the expectation over the sequence scores and plots them to see what the training data looks like
-        scores = exp_hamiltonians(samp_seqs, J, h)
+        scores = gen_model.energy(samp_seqs)
         plt.figure()
         plt.hist(scores, bins=250)
-        plt.gcf().savefig(experiment_dir+'TrainingSequences_cont_Dist.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_Expectation_Hist.png', dpi=250)
         plt.close()
         # setting the onehot to the new params['dequantize']d sequences
         oh = samp_seqs
@@ -135,7 +142,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
         scores = gen_model.energy(enc_seqs)
         plt.figure()
         plt.hist(scores, bins=250)
-        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Dist.png', dpi=250)'''
+        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Hist.png', dpi=250)'''
 
     # assert that there is more data than the amount of training data requested: 
     assert N > params['tda'], 'requested using too much training data! Lower --tda <amount of training data>'
@@ -150,62 +157,67 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
     xval = oh[test_set, :]
 
     network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=5, nl_hidden=200, 
-                                nl_activation=params['nl_activation'])#, params['nl_activation']_scale=params['nl_activation']_scale)
+                                nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
     if params['MLepochs']>0:
         network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
                                                     verbose=params['verbose'])
 
         print('done with ML training')
-        sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature=params['temperature'], nsample=5000)
+        exp_energy_x, hard_energy_x = network.sample(temperature=params['temperature'], nsample=5000)
 
         plt.figure()
-        plt.hist(energy_x, bins=100)
-        plt.gcf().savefig(experiment_dir+'PostML_GeneratedEnergies.png', dpi=250)
+        plt.hist(exp_energy_x, bins=100)
+        plt.gcf().savefig(experiment_dir+'Post_ML_Expectation_GeneratedEnergies.png', dpi=250)
+        plt.close()
+
+        plt.figure()
+        plt.hist(hard_energy_x, bins=100)
+        plt.gcf().savefig(experiment_dir+'Post_ML_ArgMax_GeneratedEnergies.png', dpi=250)
         plt.close()
 
         plt.figure()
         plt.plot(network1.history['loss'], label='training')
         plt.plot(network1.history['val_loss'], label='validation')
         plt.legend()
-        plt.gcf().savefig(experiment_dir+'PostML_LossCurves.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'Post_ML_LossCurves.png', dpi=250)
         plt.close()
 
-        network.save(experiment_dir+'Model_Post_ML_Training.tf')
+        network.save(experiment_dir+'Model_Post__ML_Training.tf')
         #pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
 
     if params['KL_only']:
         network2 = network.train_KL(epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
-        is_discrete=True, save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir)
+        save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir)
     
         plt.figure()
         plt.plot(network1.history['loss'], label='training')
         plt.plot(network1.history['val_loss'], label='validation')
         plt.legend()
-        plt.gcf().savefig(experiment_dir+'PostKL_LossCurves.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'Post_KL_LossCurves.png', dpi=250)
         plt.close()
 
     else: 
         network2 = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['KLepochs'], batch_size=params['KLbatch'], 
                                                             weight_ML=params['MLweight'], weight_KL=params['KLweight'], weight_MC=0.0, weight_W2=0.0,
                                                             weight_RCEnt=0.0, temperature=params['temperature'], explore=params['explore'], verbose=params['verbose'],
-                                                            is_discrete=True, save_partway_inter=params['save_partway_inter'],
+                                                            save_partway_inter=params['save_partway_inter'],
                                                             experiment_dir=experiment_dir)
 
         plt.figure()
         plt.plot(network2[1][:,0])
-        plt.gcf().savefig(experiment_dir+'PostKL_Overall_LossCurve.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'Post_KL_Overall_LossCurve.png', dpi=250)
         plt.close()
 
         plt.figure()
         plt.plot(network2[1][:,1])
-        plt.gcf().savefig(experiment_dir+'PostKL_J_LossCurve.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'Post_KL_J_LossCurve.png', dpi=250)
         plt.close()
 
         plt.figure()
         plt.plot(network2[1][:,2])
-        plt.gcf().savefig(experiment_dir+'PostKL_KL_LossCurve.png', dpi=250)
+        plt.gcf().savefig(experiment_dir+'Post_KL_KL_LossCurve.png', dpi=250)
         plt.close()
 
         '''plt.figure()
@@ -217,17 +229,21 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
 
     #pickle.dump(network2, open(experiment_dir+'losses_KL.pickle','wb'))
 
-    sample_z, sample_x, energy_z, energy_x, log_w = network.sample(temperature= params['temperature'], nsample=5000)
+    exp_energy_x, hard_energy_x = network.sample(temperature=params['temperature'], nsample=5000)
 
     plt.figure()
-    plt.hist(energy_x, bins=100)
-    #plt.show()
-    plt.gcf().savefig(experiment_dir+'GeneratedEnergies.png', dpi=250)
+    plt.hist(exp_energy_x, bins=100)
+    plt.gcf().savefig(experiment_dir+'Post_KL_Expectation_GeneratedEnergies.png', dpi=250)
+    plt.close()
+
+    plt.figure()
+    plt.hist(hard_energy_x, bins=100)
+    plt.gcf().savefig(experiment_dir+'Post_KL_ArgMax_GeneratedEnergies.png', dpi=250)
     plt.close()
 
     total_time = time.time() - start_time
     print('======== total time for this run in minutes', total_time/60)
-    with open('experiments/'+ 'time_taken.txt', 'w') as file:
+    with open(experiment_dir+ 'time_taken.txt', 'w') as file:
         file.write('Total time taken was: ' + str(total_time))
     
     
