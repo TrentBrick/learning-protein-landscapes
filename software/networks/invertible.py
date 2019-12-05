@@ -674,7 +674,7 @@ class EnergyInvNet(InvNet):
         super().__init__(energy_model.dim, layers, prior=prior)
 
     @classmethod
-    def load(cls, filename, energy_model, clear_session=False):
+    def load(cls, filename, energy_model, is_discrete, clear_session=False):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
         from  util import load_obj
@@ -684,7 +684,7 @@ class EnergyInvNet(InvNet):
         prior = D['prior']
         layerdicts = D['layers']
         layers = [eval(d['type']).from_dict(d) for d in layerdicts]
-        return EnergyInvNet(energy_model, layers, prior=prior)
+        return EnergyInvNet(energy_model, layers, is_discrete, prior=prior)
 
     # TODO: This is only implemented for the normal prior.
     def log_w(self, high_energy, max_energy, temperature_factors=1.0):

@@ -41,15 +41,6 @@ print('current directory', cwd)
 
 
 def main(params):
-    
-    '''params['MLepochs'] = 200, params['KLepochs'] = 200,
-params['lr'] = 0.001, params['MLbatch'] = 128, params['KLbatch'] = 1000,
-params['temperature'] = 1.0, params['explore'] = 1.0, params['latent_std']=1.0, 
-params['KLweight']=1.0, params['MLweight']=0.1, params['model_architecture'] = 'NNNNS', params['nl_activation'] ='tanh', 
-params['nl_activation']_scale = 'tanh', params['verbose']=True, params['random_seed']=27, 
-params['experiment_base_name']='didnt_set_exp_name', 
-params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']=True, params['load_model']='None'):
-'''
     # timing the entire run. 
     start_time = time.time()
 
@@ -160,7 +151,7 @@ params['save_partway_inter']=None, params['KL_only']=False, params['dequantize']
                                 nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
     if params['load_model'] != 'None':			
-        network = network.load('experiments/'+params['load_model'], gen_model)		
+        network = network.load('experiments/'+params['load_model'], gen_model, params['is_discrete'])		
 
     if params['MLepochs']>0:
         network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
