@@ -674,7 +674,7 @@ class EnergyInvNet(InvNet):
         super().__init__(energy_model.dim, layers, prior=prior)
 
     @classmethod
-    def load(cls, filename, energy_model, is_discrete, clear_session=False):
+    def load(cls, filename, energy_model, is_discrete=True, clear_session=False):
         """ Loads parameters into model. Careful: this clears the whole TF session!!
         """
         from  util import load_obj

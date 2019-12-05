@@ -151,7 +151,7 @@ def main(params):
                                 nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
     if params['load_model'] != 'None':			
-        network = network.load('experiments/'+params['load_model'], gen_model, params['is_discrete'])		
+        network = network.load('experiments/'+params['load_model'], gen_model, is_discrete=True])		
 
     if params['MLepochs']>0:
         network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
