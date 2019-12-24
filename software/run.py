@@ -27,10 +27,10 @@ parser.add_argument('--tda', type=int, action='store', nargs='+',
                     help='training data amount. Will assert that it is less than the total amount of data. \
                         Currently also splits this equally and randomly into train and test')            
 parser.add_argument('--MLbatch', type=int, action='store', nargs='+',
-                    default = [32],
+                    default = [124],
                     help='Batchsize for ML')
 parser.add_argument('--KLbatch', type=int, action='store', nargs='+',
-                    default = [32],
+                    default = [124],
                     help='Batchsize for KL')
 parser.add_argument('--temperature', type=float, action='store', nargs='+',
                     default = [1.0],
@@ -44,6 +44,9 @@ parser.add_argument('--latent_std', type=float, action='store', nargs='+',
 parser.add_argument('--MLweight', type=float, action='store', nargs='+',
                     default = [1.0],
                     help='Number of Epochs for pure ML training')
+parser.add_argument('--Entropyweight', type=float, action='store', nargs='+',
+                    default = [1.0],
+                    help='The amount of entropy penalty to the generated sequences.')
 parser.add_argument('--KLweight', type=float, action='store', nargs='+',
                     default = [1.0],
                     help='Number of Epochs for pure ML training')
@@ -71,11 +74,14 @@ parser.add_argument('--KL_only', type=bool, action='store', nargs='+',
                     default = [False],
                     help='rather than joint, do KL training only')
 parser.add_argument('--dequantize', type=bool, action='store', nargs='+',
-                    default = [True],
+                    default = [False],
                     help='dequantize the training data')
 parser.add_argument('--nl_activation_scale', type=str, action='store', nargs='+',
                     default = ['tanh'],
                     help='type of activation for scaling')
+parser.add_argument('--gradient_clip', type=float, action='store', nargs='+',
+                    default = [1.0],
+                    help='amount of gradient clipping')
 parser.add_argument('--load_model', type=str, action='store', nargs='+',
                     default = ['None'],
                     help='give the correct path to load in the model')

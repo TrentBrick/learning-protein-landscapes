@@ -147,15 +147,15 @@ def main(params):
 
     xval = oh[test_set, :]
 
-    network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=5, nl_hidden=200, 
+    network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=3, nl_hidden=100, 
                                 nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
     if params['load_model'] != 'None':			
-        network = network.load('experiments/'+params['load_model'], gen_model, is_discrete=True])		
+        network = network.load('experiments/'+params['load_model'], gen_model, is_discrete=True)		
 
     if params['MLepochs']>0:
         network1 = network.train_ML(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
-                                                    verbose=params['verbose'])
+                                                    verbose=params['verbose'], clipnorm=params['gradient_clip'])
 
         print('done with ML training')
         exp_energy_x, hard_energy_x = network.sample(temperature=params['temperature'], nsample=5000)
@@ -183,7 +183,7 @@ def main(params):
     if params['KL_only']:
         network2 = network.train_KL(epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
-        save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir)
+        save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
     
         plt.figure()
         plt.plot(network1.history['loss'], label='training')
@@ -196,8 +196,8 @@ def main(params):
         network2 = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['KLepochs'], batch_size=params['KLbatch'], 
                                                             weight_ML=params['MLweight'], weight_KL=params['KLweight'], weight_MC=0.0, weight_W2=0.0,
                                                             weight_RCEnt=0.0, temperature=params['temperature'], explore=params['explore'], verbose=params['verbose'],
-                                                            save_partway_inter=params['save_partway_inter'],
-                                                            experiment_dir=experiment_dir)
+                                                            save_partway_inter=params['save_partway_inter'], clipnorm=params['gradient_clip'],
+                                                            experiment_dir=experiment_dir, entropy_weight = params['Entropyweight'])
 
         plt.figure()
         plt.plot(network2[1][:,0])

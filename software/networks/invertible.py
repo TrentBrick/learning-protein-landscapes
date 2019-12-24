@@ -670,6 +670,7 @@ class EnergyInvNet(InvNet):
     def __init__(self, energy_model, layers, is_discrete, prior='normal'):
         """ Invertible net where we have an energy function that defines p(x) """
         self.energy_model = energy_model
+        self.AA_num = energy_model.AA_num
         self.is_discrete = is_discrete
         super().__init__(energy_model.dim, layers, prior=prior)
 
@@ -756,20 +757,47 @@ class EnergyInvNet(InvNet):
         #return self.log_det_Jzx + Ereg
         return -explore * self.log_det_Jzx[:, 0] + Ereg
 
-    def log_KL_x_discrete(self, batch_size, high_energy=10, max_energy=100, temperature_factors=1.0, explore=1.0):
+    def entropy_seq(self, x):
+        """Takes in a batch of sequences of shape 'batchsize x protein length x # AAs' 
+        that have been softmaxed and computes their entropy"""
+
+        unq_ents = tf.math.multiply(x, tf.math.log(x)) # elementwise multiplication of the probabilities
+        unq_ents = tf.Print(unq_ents, [unq_ents], 'did log multiplication')
+        pos_ents = tf.reduce_sum(unq_ents, axis=2) #position wise entropies calculated
+        seq_ents = tf.reduce_sum(pos_ents, axis=1, keep_dims=True) # sum up the entropy for each sequence
+        # should now be a batch of entropy numbers
+        return -seq_ents
+
+    def softmaxer(self, inp, batch_size):
+        #taking the softmax first. 
+        inp = tf.reshape(inp , (batch_size, -1, self.AA_num))
+        inp = tf.nn.softmax(inp,axis=-1)
+
+        return inp
+
+    def log_KL_x_discrete(self, batch_size, high_energy=10, 
+    max_energy=100, temperature_factors=1.0, explore=1.0, entropy_weight=1.0):
         # explore is responsible for how large the log determinant should be. 
         x = self.output_x
         b = tf.Print(batch_size, [batch_size], 'size of batch')
-        E = self.energy_model.discrete_energy_tf(x, b) 
+
+        x_sm = self.softmaxer(x, b) # returns batchsize x protein length x # AAs
+        #reshaping so that its flat again
+        x_sm_flat = tf.reshape(x_sm, (b, -1))
+
+        E = self.energy_model.discrete_energy_tf(x_sm_flat) 
         E = tf.Print(E, [E], 'these are the energy rewards')
 
+        # energy clipping for the unstable NVP training. 
         #Ereg = -linlogcut(-E, high_energy, max_energy, tf=True)
 
         l_det = tf.Print(self.log_det_Jzx,[self.log_det_Jzx], 'full log determinant in loss')
         #l_det = tf.Print(l_det[:, 0],[l_det[:, 0]], 'log determinant in loss') # this was doing the equivalent of squeezing into a 1 vector. 
-        loss = - E - tf.cast(explore * l_det, tf.float32)
+        ent_seqs = self.entropy_seq(x_sm) # getting the entropy of the sequences
+        ent_seqs = tf.Print(ent_seqs, [ent_seqs], "sequence entropies")
+        loss = - E - tf.cast(explore * l_det, tf.float32) + tf.cast(entropy_weight * ent_seqs, tf.float32)
         loss_p = tf.Print(loss, [loss], 'this is the total loss')
-        return loss_p #/ batch_size
+        return loss_p #/ batch_size  #  SHOULD THIS BE SUMMED UP OR DIVIDED BY BATCHSIZE? DOES KERAS TAKE THE MEAN? 
 
     def log_GaussianPriorMCMC_efficiency(self, high_energy, max_energy, metric=None, symmetric=False):
         """ Computes the efficiency of GaussianPriorMCMC from a parallel x1->z1, z2->x2 network.
@@ -911,7 +939,7 @@ class EnergyInvNet(InvNet):
                        weight_W2=0.0,
                        weight_RCEnt=0.0, rc_func=None, rc_min=0.0, rc_max=1.0,
                        save_partway_inter=None,
-                       experiment_dir='DidNotPutInAName'):
+                       experiment_dir='DidNotPutInAName', entropy_weight = 1.0):
         import numbers
         if isinstance(temperature, numbers.Number):
             temperature = np.array([temperature])
@@ -932,7 +960,7 @@ class EnergyInvNet(InvNet):
         def loss_KL(y_true, y_pred):
             return self.log_KL_x(high_energy, max_energy, temperature_factors=tfac, explore=explore)
         def loss_KL_disc(y_true, y_pred):
-            return self.log_KL_x_discrete(batch_size, temperature_factors=tfac, explore=explore)
+            return self.log_KL_x_discrete(batch_size, temperature_factors=tfac, explore=explore, entropy_weight=entropy_weight)
         def loss_MCEff_supervised(y_true, y_pred):
             return -self.log_GaussianPriorMCMC_efficiency(high_energy, max_energy, metric=metric, symmetric=symmetric_MC)
         def loss_MCEff_unsupervised(y_true, y_pred):
@@ -1125,7 +1153,6 @@ def invnet(dim, layer_types, energy_model=None, channels=None,
 
     # prepare layers
     layers = []
-
 
     for ltype in layer_types:
         if ltype == '<':

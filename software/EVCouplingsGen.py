@@ -30,16 +30,16 @@ class EVCouplingsGenerator(object):
         O = np.reshape(np.eye(self.AA_num)[labels], (*labels.shape, self.AA_num))
         return(O)
         
-    def discrete_energy_tf(self, inp, batch_size):
+    def discrete_energy_tf(self, inp):
 
         """
         Calculates in tensorflow the hamiltonian energy. 
-        First computes the softmax over the possible sequences. 
+        Takes in the softmax over the sequences generated from the neural network. 
         Then computes the expected energy over this softmax in a vectorized way. 
         Parameters
         ----------
         sequences : np.array
-            Flattened protein sequences output from the neural network batch_size x (protein_length x 20) 
+            Flattened protein sequences output from the neural network that have already been softmaxed batch_size x (protein_length x 20) 
         batch_size: int
             Size of the batch to be able to perform reshaping
         Returns
@@ -47,13 +47,6 @@ class EVCouplingsGenerator(object):
         tf.Tensor
             tf.float32 matrix of size batch_size x 1
         """
-        
-        #taking the softmax first. 
-        inp = tf.reshape(inp , (batch_size, -1, self.AA_num))
-        inp = tf.nn.softmax(inp,axis=-1)
-
-        #reshaping so that its flat again
-        inp = tf.reshape(inp, (batch_size, -1))
 
         # applying the vectorized EVH loss: 
         h_val = tf.matmul(inp, self.h_tf )
