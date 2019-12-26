@@ -761,7 +761,8 @@ class EnergyInvNet(InvNet):
         """Takes in a batch of sequences of shape 'batchsize x protein length x # AAs' 
         that have been softmaxed and computes their entropy"""
 
-        unq_ents = tf.math.multiply(x, tf.math.log(x)) # elementwise multiplication of the probabilities
+        # need to allow for numerical stability. nans propagate. 
+        unq_ents = tf.math.multiply(x, tf.math.log(x+0.000000000001)) # elementwise multiplication of the probabilities
         unq_ents = tf.Print(unq_ents, [unq_ents], 'did log multiplication')
         pos_ents = tf.reduce_sum(unq_ents, axis=2) #position wise entropies calculated
         seq_ents = tf.reduce_sum(pos_ents, axis=1, keep_dims=True) # sum up the entropy for each sequence
@@ -772,7 +773,6 @@ class EnergyInvNet(InvNet):
         #taking the softmax first. 
         inp = tf.reshape(inp , (batch_size, -1, self.AA_num))
         inp = tf.nn.softmax(inp,axis=-1)
-
         return inp
 
     def log_KL_x_discrete(self, batch_size, high_energy=10, 
@@ -785,7 +785,8 @@ class EnergyInvNet(InvNet):
         #reshaping so that its flat again
         x_sm_flat = tf.reshape(x_sm, (b, -1))
 
-        E = self.energy_model.discrete_energy_tf(x_sm_flat) 
+        E = self.energy_model.discrete_energy_tf(x_sm_flat)
+        #E = self.energy_model.discrete_energy_tf(x, b)
         E = tf.Print(E, [E], 'these are the energy rewards')
 
         # energy clipping for the unstable NVP training. 
@@ -793,9 +794,11 @@ class EnergyInvNet(InvNet):
 
         l_det = tf.Print(self.log_det_Jzx,[self.log_det_Jzx], 'full log determinant in loss')
         #l_det = tf.Print(l_det[:, 0],[l_det[:, 0]], 'log determinant in loss') # this was doing the equivalent of squeezing into a 1 vector. 
-        ent_seqs = self.entropy_seq(x_sm) # getting the entropy of the sequences
+        
+        ent_seqs = tf.math.multiply(entropy_weight, self.entropy_seq(x_sm)) # getting the entropy of the sequences
         ent_seqs = tf.Print(ent_seqs, [ent_seqs], "sequence entropies")
-        loss = - E - tf.cast(explore * l_det, tf.float32) + tf.cast(entropy_weight * ent_seqs, tf.float32)
+
+        loss = - E - tf.cast(explore * l_det, tf.float32) + tf.cast( ent_seqs, tf.float32) #tf.zeros((batch_size, 1), dtype=tf.float32)#
         loss_p = tf.Print(loss, [loss], 'this is the total loss')
         return loss_p #/ batch_size  #  SHOULD THIS BE SUMMED UP OR DIVIDED BY BATCHSIZE? DOES KERAS TAKE THE MEAN? 
 
