@@ -21,6 +21,24 @@ import numpy as np
 import disc_utils
 
 
+class DiscreteAutoFlowModel(nn.Module):
+    # combines all of the discrete flow layers into a single model
+    def __init__(self, flows):
+        super().__init__()
+        self.flows = nn.ModuleList(flows)
+
+    def forward(self, z):
+         # from the latent space to data
+        for flow in self.flows:
+            z = flow.forward(z)
+        return z
+
+    def reverse(self, x):
+        # from the data to latent space
+        for flow in self.flows[::-1]:
+            x = flow.reverse(x)
+        return x
+
 # TODO(trandustin): Move Reverse to another module(?).
 class Reverse(nn.Module):
   """Swaps the forward and reverse transformations of a layer."""
@@ -30,8 +48,8 @@ class Reverse(nn.Module):
     if not hasattr(reversible_layer, 'reverse'):
       raise ValueError('Layer passed-in has not implemented "reverse" method: '
                        '{}'.format(reversible_layer))
-    self.call = reversible_layer.reverse
-    self.reverse = reversible_layer.call
+    self.forward = reversible_layer.reverse
+    self.reverse = reversible_layer.forward
 
 
 class DiscreteAutoregressiveFlow(nn.Module):
@@ -72,7 +90,7 @@ class DiscreteAutoregressiveFlow(nn.Module):
   [prime fields](https://en.wikipedia.org/wiki/Finite_field)).
   """
 
-  def __init__(self, layer, temperature, vocab_size, **kwargs):
+  def __init__(self, layer, temperature, vocab_size):
     """Constructs flow.
     Args:
       layer: Two-headed masked network taking the inputs and returning a
@@ -83,10 +101,11 @@ class DiscreteAutoregressiveFlow(nn.Module):
       temperature: Positive value determining bias of gradient estimator.
       **kwargs: kwargs of parent class.
     """
-    super(DiscreteAutoregressiveFlow, self).__init__(**kwargs)
+    super().__init__()
     self.layer = layer
     self.temperature = temperature
-    self.vocab_size
+    self.vocab_size = vocab_size
+
     '''def build(self, input_shape):
     input_shape = tf.TensorShape(input_shape)
     self.vocab_size = input_shape[-1]
@@ -152,17 +171,17 @@ class DiscreteAutoregressiveFlow(nn.Module):
     net = self.layer(padded_inputs, **kwargs) # feeding this into the MADE network. store these as net.
     if net.shape[-1] == 2 * self.vocab_size: # if the network outputted both a location and scale.
       loc, scale = torch.split(net, self.vocab_size, dim=-1) #tf.split(net, 2, axis=-1) # split in two into these variables
-      loc = loc[:, 0, :] #
-      loc = disc_utils.one_hot_argmax(loc, self.temperature).unsqueeze(1).type(inputs.dtype)
-      scale = scale[:, 0, :]
-      scale = disc_utils.one_hot_argmax(scale, self.temperature).unsqueeze(1).type(inputs.dtype)
-      inverse_scale = disc_utils.multiplicative_inverse(scale, self.vocab_size)
+      loc = loc[:, 0:1, :] #
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
+      scale = scale[:, 0:1, :]
+      scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
+      inverse_scale = disc_utils.multiplicative_inverse(scale, self.vocab_size) # could be made more efficient by calculating the argmax once and passing it into both functions. 
       shifted_inputs = disc_utils.one_hot_minus(inputs, loc)
       outputs = disc_utils.one_hot_multiply(shifted_inputs, inverse_scale)
     elif net.shape[-1] == self.vocab_size:
       loc = net
       loc = loc[..., 0:1, :]
-      loc = tf.cast(disc_utils.one_hot_argmax(loc, self.temperature), inputs.dtype)
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
       outputs = disc_utils.one_hot_minus(inputs, loc)
     else:
       raise ValueError('Output of layer does not have compatible dimensions.')
@@ -184,56 +203,56 @@ class DiscreteAutoregressiveFlow(nn.Module):
       timestep: Current timestep.
       **kwargs: Optional keyword arguments to layer.
     """
-    inputs = tf.concat([current_outputs,
-                        new_inputs[..., tf.newaxis, :]], axis=-2)
+    inputs = torch.cat([current_outputs,
+                        new_inputs.unsqueeze(1)], dim=-2)
     # TODO(trandustin): To handle variable lengths, extend MADE to subset its
     # input and output layer weights rather than pad inputs.
-    batch_ndims = inputs.shape.ndims - 2
-    padded_inputs = tf.pad(
-        inputs,
-        paddings=[[0, 0]] * batch_ndims + [[0, length - timestep - 1], [0, 0]])
+    batch_ndims = 1 #inputs.shape.ndims - 2
+
+    padded_inputs = F.pad(
+        inputs, (0,0,0, length - timestep - 1) ) # only pad up to the current timestep
+
     net = self.layer(padded_inputs, **kwargs)
     if net.shape[-1] == 2 * self.vocab_size:
-      loc, scale = tf.split(net, 2, axis=-1)
+      loc, scale = torch.split(net, self.vocab_size, dim=-1)
       loc = loc[..., :(timestep+1), :]
-      loc = tf.cast(disc_utils.one_hot_argmax(loc, self.temperature), inputs.dtype)
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
       scale = scale[..., :(timestep+1), :]
-      scale = tf.cast(disc_utils.one_hot_argmax(scale, self.temperature),
-                      inputs.dtype)
+      scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
       inverse_scale = disc_utils.multiplicative_inverse(scale, self.vocab_size)
       shifted_inputs = disc_utils.one_hot_minus(inputs, loc)
       new_outputs = disc_utils.one_hot_multiply(shifted_inputs, inverse_scale)
     elif net.shape[-1] == self.vocab_size:
       loc = net
       loc = loc[..., :(timestep+1), :]
-      loc = tf.cast(disc_utils.one_hot_argmax(loc, self.temperature), inputs.dtype)
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
       new_outputs = disc_utils.one_hot_minus(inputs, loc)
     else:
       raise ValueError('Output of layer does not have compatible dimensions.')
-    outputs = tf.concat([current_outputs, new_outputs[..., -1:, :]], axis=-2)
-    if not tf.executing_eagerly():
-      outputs.set_shape([None] * batch_ndims + [timestep+1, self.vocab_size])
+    outputs = torch.cat([current_outputs, new_outputs[..., -1:, :]], dim=-2)
     return outputs
 
   def reverse(self, inputs, **kwargs):
     """Reverse pass returning the inverse autoregressive transformation."""
-    if not self.built:
-      self._maybe_build(inputs)
+    #if not self.built:
+    #  self._maybe_build(inputs)
 
     net = self.layer(inputs, **kwargs)
+    #print('reverse net output', net.shape)
     if net.shape[-1] == 2 * self.vocab_size:
-      loc, scale = tf.split(net, 2, axis=-1)
-      scale = tf.cast(disc_utils.one_hot_argmax(scale, self.temperature),
-                      inputs.dtype)
+      loc, scale = torch.split(net, self.vocab_size, dim=-1)
+      scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
       scaled_inputs = disc_utils.one_hot_multiply(inputs, scale)
     elif net.shape[-1] == self.vocab_size:
       loc = net
       scaled_inputs = inputs
     else:
       raise ValueError('Output of layer does not have compatible dimensions.')
-    loc = tf.cast(disc_utils.one_hot_argmax(loc, self.temperature), inputs.dtype)
-    outputs = disc_utils.one_hot_add(loc, scaled_inputs)
+    loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
+    #print('reverse loc', loc.shape)
+    outputs = disc_utils.one_hot_add(scaled_inputs, loc )
+    #print(outputs.shape)
     return outputs
 
   def log_det_jacobian(self, inputs):
-    return tf.cast(0, inputs.dtype)
+    return torch.zeros((1)).type(inputs.dtype)

@@ -166,6 +166,7 @@ class MAF(nn.Module):
         super().__init__()
         self.dim = dim
         # nin, nout, number hidden
+        # parity flips the ordering so the transform is applied to the other side. 
         self.net = net_class(dim, dim*2, nh)
         self.parity = parity
 

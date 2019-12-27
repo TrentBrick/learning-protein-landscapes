@@ -46,7 +46,7 @@ class MADE(nn.Module):
         # define a simple MLP neural net
         self.net = []
         hs = [nin] + hidden_sizes + [nout]
-        for h0,h1 in zip(hs, hs[1:]):
+        for h0,h1 in zip(hs, hs[1:]): # feeds from one layer to the next.
             self.net.extend([
                     MaskedLinear(h0, h1),
                     nn.ReLU(),
