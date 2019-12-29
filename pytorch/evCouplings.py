@@ -145,24 +145,24 @@ def main(params):
     base = torch.distributions.multivariate_normal.MultivariateNormal(torch.zeros(gen_model.dim), torch.eye(gen_model.dim))
 
     # RealNVP
-    #flows = [AffineHalfFlow(dim=2, parity=i%2) for i in range(9)]
+    #flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2) for i in range(9)]
 
     # NICE
-    flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=64 ,scale=False) for i in range(4)]
-    flows.append(AffineConstantFlow(dim=gen_model.dim, shift=False))
+    #flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=64 ,scale=False) for i in range(4)]
+    #flows.append(AffineConstantFlow(dim=gen_model.dim, shift=False))
 
     # SlowMAF (MAF, but without any parameter sharing for each dimension's scale/shift)
-    # flows = [SlowMAF(dim=2, parity=i%2) for i in range(4)]
+    flows = [SlowMAF(dim=gen_model.dim, parity=i%2) for i in range(4)]
 
     # MAF (with MADE net, so we get very fast density estimation)
-    #flows = [MAF(dim=2, parity=i%2, nh=64) for i in range(4)]
+    #flows = [MAF(dim=gen_model.dim, parity=i%2, nh=64) for i in range(4)]
 
     # Neural splines, coupling
     '''nfs_flow = NSF_CL if True else NSF_AR
     # MAY WANT TO CHANGE THIS HIDDEN_DIM SIZE!
-    flows = [nfs_flow(dim=2, K=8, B=3, hidden_dim=16) for _ in range(3)]
-    convs = [Invertible1x1Conv(dim=2) for _ in flows]
-    norms = [ActNorm(dim=2) for _ in flows]
+    flows = [nfs_flow(dim=gen_model.dim, K=8, B=3, hidden_dim=16) for _ in range(3)]
+    convs = [Invertible1x1Conv(dim=gen_model.dim) for _ in flows]
+    norms = [ActNorm(dim=gen_model.dim) for _ in flows]
     flows = list(itertools.chain(*zip(norms, convs, flows)))'''
 
     network = NormalizingFlowModel(base, flows, gen_model)
@@ -203,8 +203,8 @@ def main(params):
         plt.gcf().savefig(experiment_dir+'Post_ML_LossCurves.png', dpi=100)
         plt.close()
 
-        #network.save(experiment_dir+'Model_Post_ML_Training.tf')
-        #pickle.dump(network1, open(experiment_dir+'losses_ML.pickle', 'wb'))
+        torch.save(network.flow, experiment_dir+'Model_Post_ML_Training.torch')
+        pickle.dump(ML_losses, open(experiment_dir+'ML_only_losses_dict.pickle','wb'))
 
     if params['KL_only']:
         KL_losses = network.train_flexible(weight_ML=0.0, epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
@@ -219,6 +219,10 @@ def main(params):
         plt.legend()
         plt.gcf().savefig(experiment_dir+'Post_KL_LossCurves.png', dpi=100)
         plt.close()
+
+        torch.save(network.flow, experiment_dir+'Model_Post_KL_Training.torch')
+        pickle.dump(KL_losses, open(experiment_dir+'KL_only_losses_dict.pickle','wb'))
+
 
     else: 
         ML_KL_losses = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['KLepochs'], batch_size=params['KLbatch'], 
@@ -235,9 +239,8 @@ def main(params):
             plt.gcf().savefig(experiment_dir+'Post_KL_'+loss_to_plot+'_LossCurve.png', dpi=100)
             plt.close()
    
-    #network.save(experiment_dir+'Model_Post_KL_Training.tf')
-
-    #pickle.dump(network2, open(experiment_dir+'losses_KL.pickle','wb'))
+    torch.save(network.flow, experiment_dir+'Model_Post_ML_KL_Training.torch')
+    pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
 
     exp_energy_x, hard_energy_x = network.sample_energy(num_samples=5000, temperature=params['temperature'])
 

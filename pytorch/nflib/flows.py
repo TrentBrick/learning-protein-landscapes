@@ -32,6 +32,7 @@ from torch import nn
 import pickle
 
 import matplotlib
+import platform
 if platform.system() == 'Darwin':
     matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -397,6 +398,8 @@ class NormalizingFlowModel(nn.Module):
 
             if save_partway_inter is not None and (e+1)%save_partway_inter==0: 
 
+                # save the neural network: 
+                torch.save(self.flow, experiment_dir+'Model_During_'+str(e)+'_ML_'+str(weight_ML)+'_KL_'+'.torch')
                 #self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
                 exp_energy_x, hard_energy_x = self.sample_energy(num_samples=5000, temperature=temperature)
 
