@@ -2,8 +2,8 @@
 arxiv
 coverletter.*
 local_*
-software/experiments/
-
+tensorf/experiments/
+pytorch/experiments/
 # rescue and compiled files 
 *.lyx~
 ~$*
