@@ -42,6 +42,8 @@ def unconstrained_RQS(inputs, unnormalized_widths, unnormalized_heights,
     outputs[outside_interval_mask] = inputs[outside_interval_mask]
     logabsdet[outside_interval_mask] = 0
 
+    #print(' RQS input', inputs[inside_intvl_mask])
+
     outputs[inside_intvl_mask], logabsdet[inside_intvl_mask] = RQS(
         inputs=inputs[inside_intvl_mask],
         unnormalized_widths=unnormalized_widths[inside_intvl_mask, :],
@@ -60,6 +62,9 @@ def RQS(inputs, unnormalized_widths, unnormalized_heights,
         bottom=0., top=1., min_bin_width=DEFAULT_MIN_BIN_WIDTH,
         min_bin_height=DEFAULT_MIN_BIN_HEIGHT,
         min_derivative=DEFAULT_MIN_DERIVATIVE):
+    #print('spline inp', inputs, inputs.shape)
+    if len(inputs.shape) ==0:
+        raise ValueError("input has nans?!", inputs)
     if torch.min(inputs) < left or torch.max(inputs) > right:
         raise ValueError("Input outside domain")
 

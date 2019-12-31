@@ -65,7 +65,7 @@ class EVCouplingsGenerator(object):
         """
         Calculates the Hamiltonian of the global probability distribution P(A_1, ..., A_L)
         for a given sequence A_1,...,A_L from J_ij and h_i parameters.
-        Will argmax everything. 
+        Will argmax or softmax everything. 
         Parameters
         ----------
         seqs : np.array
@@ -81,7 +81,7 @@ class EVCouplingsGenerator(object):
         Returns
         -------
         np.array
-            Float matrix of size len(sequences) x 1
+            Float matrix of energy scores of size len(sequences) x 1
         """
 
         # check what format the input is of. 

@@ -21,9 +21,10 @@ from scipy.special import softmax
 import json
 
 from EVCouplingsGen import *
-
 from evcouplings.couplings import CouplingsModel
 from EVCouplingsStuff.seq_sele import *
+
+from metropolis import MetropolisHastings
 
 from nflib.MADE import *
 from nflib.flows import *
@@ -36,12 +37,13 @@ print('current directory', cwd)
 
 def main(params):
 
+    # setting device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    params['device'] = device
+    if torch.cuda.is_available():
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
     # timing the entire run. 
     start_time = time.time()
-
-    # taking a percentage of the total KL epochs. 
-    if params['save_partway_inter'] is not None: 
-        params['save_partway_inter'] = int(params['save_partway_inter']*params['KLepochs'])
 
     # setting the random seeds
     torch.manual_seed(params['random_seed'])
@@ -49,9 +51,9 @@ def main(params):
 
     # Creating new directory to save all run outputs in
     date_time = str(datetime.now()).replace(' ', '_').replace(':', '_') # ensures there aren't any issues saving this as a file name. 
-    experiment_name = params['experiment_base_name']+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_activation-%s_model_architecture-%s_MLweight-%s_KLweight-%s_explore%s_temperature-%s_s_time-%s" % (
+    experiment_name = params['exp_base_name']+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_MLweight-%s_KLweight-%s_explore%s_temperature-%s_s_time-%s" % (
         params['random_seed'], params['MLepochs'], params['KLepochs'], 
-        params['lr'], params['nl_activation'], params['model_architecture'], params['MLweight'], params['KLweight'], 
+        params['lr'], params['MLweight'], params['KLweight'], 
         params['explore'], params['temperature'], date_time )
     os.mkdir('experiments/'+experiment_name)
     experiment_dir = 'experiments/'+ experiment_name+'/'
@@ -72,7 +74,8 @@ def main(params):
         h = h[0:params['protein_length'], :]
         J = J[0:params['protein_length'], 0:params['protein_length'], :,:]
             
-    # converting amino acids into integers and also onehots. 
+    # processing and plotting the natural sequences: 
+    # first by converting amino acids into integers and also onehots. 
     enc_seqs=[]
     oh = []
     AA=h.shape[1] # number of amino acids
@@ -88,10 +91,9 @@ def main(params):
     L = oh.shape[1] # length of the protein
     # flattening the one hot
     oh = oh.reshape(oh.shape[0], -1)
+    print('number and dimensions of the natural sequences', oh.shape)
 
-    print('the size of oh', oh.shape)
-    
-    # plotting the distribution of natural sequences. As I already know what they look like I have commented this out. 
+    # plotting the distribution of natural sequences used to train the model. As I already know what they look like I have commented this out. 
     '''plt.figure()
     print('Plotting a hist of all the natural sequences energies:')
     plt.hist(gen_model.energy(enc_seqs))
@@ -101,69 +103,99 @@ def main(params):
     # loading in the environment class, used to score the evolutionary hamiltonians
     gen_model = EVCouplingsGenerator(L, AA, h, J)
 
-    # Save the argmax scores for the training sequences
-    plt.figure()
-    scores = gen_model.energy(enc_seqs)
-    plt.hist(scores, bins=250)
-    plt.gcf().savefig(experiment_dir+'TrainingSequences_ArgMax_Hist.png', dpi=100)
-    plt.close()
+    if params['MCMC'] == True:
+        nsteps = 1000
+        sampler = MetropolisHastings(gen_model, noise=5, 
+                             stride=5, mapper=None, 
+                             is_discrete=True, AA_num=AA)
+        #mapper=HardMaxMapper() but now I have discrete actions so dont need. 
+        data = sampler.run(nsteps)
+    else: 
+        # assert that there is more data than the amount of training data requested: 
+        assert N > params['tda'], 'requested using too much training data! Lower --tda <amount of training data>'
+        # need to have a train test split by sequence identity at some point
+        # currently an even split between training and validation data. 
+        rand_inds = np.random.choice(np.arange(N), params['tda'], replace=False)
+        data = oh[rand_inds, :] # flattened one hot sequences
+        
+    print('the size of all data to be used (train and val)', data.shape)
 
     # set to True by default, finds probability distribution for the most likely single mutation
     # made to every sequence
     if params['dequantize']:
-        samp_seqs = single_mut_profile(enc_seqs, h, J, AA) # samp seqs are now onehot. 
-        samp_seqs = samp_seqs.reshape(samp_seqs.shape[0], -1)
+        for_mut = data.reshape(data.shape[0], -1, AA).argmax(-1)
+        for_mut = single_mut_profile(for_mut, h, J, AA) # samp seqs are now onehot. 
+        for_mut = for_mut.reshape(for_mut.shape[0], -1)
 
         # gets the expectation over the sequence scores and plots them to see what the training data looks like
-        scores = gen_model.energy(samp_seqs)
+        scores = gen_model.energy(for_mut)
         plt.figure()
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'TrainingSequences_Expectation_Hist.png', dpi=100)
         plt.close()
         # setting the onehot to the new params['dequantize']d sequences
-        oh = samp_seqs
+        data = for_mut
 
-    # otherwise plot the current sequences from the training data and their distribution. 
-    '''else: # this takes a very long time to compute!!!
-        scores = gen_model.energy(enc_seqs)
-        plt.figure()
-        plt.hist(scores, bins=250)
-        plt.gcf().savefig(experiment_dir+'TrainingSequences_argmax_Hist.png', dpi=100)'''
-
-    # assert that there is more data than the amount of training data requested: 
-    assert N > params['tda'], 'requested using too much training data! Lower --tda <amount of training data>'
-
-    # need to have a train test split by sequence identity at some point
-    # currently an even split between training and validation data. 
-    rand_inds = np.random.choice(np.arange(N), params['tda'], replace=False)
+    # make train test split
+    rand_inds = np.random.choice(np.arange(data.shape[0]), params['tda'], replace=False)
     train_set = rand_inds[: (params['tda']//2) ]
     test_set = rand_inds[ (params['tda']//2): ]
-    x = oh[train_set, :]
+    x = data[train_set, :]
+    xval = data[test_set, :]
 
-    xval = oh[test_set, :]
+    print('shape of data used for training', x.shape)
 
+    # plotting the training and Xval dataset energy histograms: 
+    for dset, name in zip([x, xval], ['Train', 'XVal']):
+        plt.figure()
+        scores = gen_model.energy(dset)
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'Expectation_Sequences_'+name+'_Data_Hist.png', dpi=100)
+        plt.close()
+
+        plt.figure()
+        oh = dset.reshape(dset.shape[0], -1, AA)
+        scores = gen_model.energy(oh.argmax(-1))
+        plt.hist(scores, bins=250)
+        plt.gcf().savefig(experiment_dir+'ArgMax_Sequences_'+name+'_Data_Hist.png', dpi=100)
+        plt.close()
+
+    # ======= setting up the normalizing flows: 
+    # logistic distribution
+    # base = TransformedDistribution(Uniform(torch.zeros(gen_model.dim), torch.ones(gen_model.dim)), SigmoidTransform().inv)
     base = torch.distributions.multivariate_normal.MultivariateNormal(torch.zeros(gen_model.dim), torch.eye(gen_model.dim))
 
-    # RealNVP
-    #flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2) for i in range(9)]
+    if params['model_type'] == 'realNVP':
+        # RealNVP
+        # used to have 9 layers
+        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim']) for i in range(params['num_layers'])]
 
-    # NICE
-    #flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=64 ,scale=False) for i in range(4)]
-    #flows.append(AffineConstantFlow(dim=gen_model.dim, shift=False))
+    if params['model_type'] == 'NICE':
+        # NICE
+        # 4 layers
+        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim'] ,scale=False) for i in range(params['num_layers'])]
+        flows.append(AffineConstantFlow(dim=gen_model.dim, shift=False))
 
-    # SlowMAF (MAF, but without any parameter sharing for each dimension's scale/shift)
-    flows = [SlowMAF(dim=gen_model.dim, parity=i%2) for i in range(4)]
+    if params['model_type'] == 'slowMAF':
+        #SlowMAF (MAF, but without any parameter sharing for each dimension's scale/shift)
+        #4 layers
+        flows = [SlowMAF(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim']) for i in range(params['num_layers'])]
 
-    # MAF (with MADE net, so we get very fast density estimation)
-    #flows = [MAF(dim=gen_model.dim, parity=i%2, nh=64) for i in range(4)]
+    if params['model_type'] == 'MAF':
+        # MAF (with MADE net, so we get very fast density estimation)
+        # 4 layers
+        flows = [MAF(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim']) for i in range(params['num_layers'])]
 
     # Neural splines, coupling
-    '''nfs_flow = NSF_CL if True else NSF_AR
-    # MAY WANT TO CHANGE THIS HIDDEN_DIM SIZE!
-    flows = [nfs_flow(dim=gen_model.dim, K=8, B=3, hidden_dim=16) for _ in range(3)]
-    convs = [Invertible1x1Conv(dim=gen_model.dim) for _ in flows]
-    norms = [ActNorm(dim=gen_model.dim) for _ in flows]
-    flows = list(itertools.chain(*zip(norms, convs, flows)))'''
+    if params['model_type'] == 'neuralSpline':
+        nfs_flow = NSF_CL if True else NSF_AR
+        # MAY WANT TO CHANGE THIS HIDDEN_DIM SIZE!
+        # 3 layers
+        flows = [nfs_flow(dim=gen_model.dim, K=8, B=3, hidden_dim=params['hidden_dim']) for _ in range(params['num_layers'])]
+        convs = [Invertible1x1Conv(dim=gen_model.dim) for _ in flows]
+        # PREVIOUSLY WAS ACTNORM BUT THIS CLEVER INIT DOESNT WORK FOR ONEHOTS
+        norms = [AffineConstantFlow(dim=gen_model.dim) for _ in flows]
+        flows = list(itertools.chain(*zip(norms, convs, flows)))
 
     network = NormalizingFlowModel(base, flows, gen_model)
 
@@ -171,13 +203,16 @@ def main(params):
     #                            nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
 
     # TODO: Enable loading in of model, use crypto code to get this working. 
+    
     if params['load_model'] != 'None':			
-        network = network.load('experiments/'+params['load_model'], gen_model, is_discrete=True)		
+        network.flow.load_state_dict(torch.load('experiments/'+params['load_model']))		
 
     if params['MLepochs']>0:
         # only ML training. 
+
         ML_losses = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
-                                                    verbose=params['verbose'], clipnorm=params['gradient_clip'], weight_KL=0.0)
+                                                    verbose=params['verbose'], clipnorm=params['gradient_clip'], weight_KL=0.0,
+                                                    save_partway_inter=params['save_partway_inter'])
 
         ML_losses = ML_losses['total_loss']
 
@@ -203,11 +238,11 @@ def main(params):
         plt.gcf().savefig(experiment_dir+'Post_ML_LossCurves.png', dpi=100)
         plt.close()
 
-        torch.save(network.flow, experiment_dir+'Model_Post_ML_Training.torch')
+        torch.save(network.flow.state_dict(), experiment_dir+'Model_Post_ML_Training.torch')
         pickle.dump(ML_losses, open(experiment_dir+'ML_only_losses_dict.pickle','wb'))
 
     if params['KL_only']:
-        KL_losses = network.train_flexible(weight_ML=0.0, epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
+        KL_losses = network.train_flexible(x, weight_ML=0.0, epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
         save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
     
@@ -220,7 +255,7 @@ def main(params):
         plt.gcf().savefig(experiment_dir+'Post_KL_LossCurves.png', dpi=100)
         plt.close()
 
-        torch.save(network.flow, experiment_dir+'Model_Post_KL_Training.torch')
+        torch.save(network.flow.state_dict(), experiment_dir+'Model_Post_KL_Training.torch')
         pickle.dump(KL_losses, open(experiment_dir+'KL_only_losses_dict.pickle','wb'))
 
 
@@ -239,7 +274,7 @@ def main(params):
             plt.gcf().savefig(experiment_dir+'Post_KL_'+loss_to_plot+'_LossCurve.png', dpi=100)
             plt.close()
    
-    torch.save(network.flow, experiment_dir+'Model_Post_ML_KL_Training.torch')
+    torch.save(network.flow.state_dict(), experiment_dir+'Model_Post_ML_KL_Training.torch')
     pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
 
     exp_energy_x, hard_energy_x = network.sample_energy(num_samples=5000, temperature=params['temperature'])

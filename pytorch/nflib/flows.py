@@ -321,6 +321,10 @@ class NormalizingFlowModel(nn.Module):
         if optimizer is None:
             optimizer = torch.optim.Adam(self.flow.parameters(), lr=lr)
 
+        # taking a percentage of the total epochs. 
+        if save_partway_inter is not None: 
+            save_partway_inter = int(save_partway_inter*epochs)
+
         # history tracker
         losses_dict = {'total_loss':[]}
         if weight_ML>0.0:
@@ -348,11 +352,11 @@ class NormalizingFlowModel(nn.Module):
                 zs, prior_logprob, forward_log_det = self.forward( data )
         
                 forward_logprob = prior_logprob + forward_log_det
-                loss_ML = weight_ML*self.ML_loss(zs, forward_logprob, std=std).unsqueeze(1) # this should be of dim: batch x 1
-
+                #print('forw log prob', forward_logprob.shape)
+                #loss_ML = weight_ML*self.ML_loss(zs, forward_logprob, std=std).unsqueeze(1) # this should be of dim: batch x 1
+                loss_ML = - weight_ML*forward_logprob.unsqueeze(1)
                 #print('dim of loss_ml', loss_ML.shape)
                 #print('loss ml', loss_ML)
-
                 total_loss += loss_ML
 
             if weight_KL > 0.0:
@@ -399,7 +403,7 @@ class NormalizingFlowModel(nn.Module):
             if save_partway_inter is not None and (e+1)%save_partway_inter==0: 
 
                 # save the neural network: 
-                torch.save(self.flow, experiment_dir+'Model_During_'+str(e)+'_ML_'+str(weight_ML)+'_KL_'+'.torch')
+                torch.save(self.flow, experiment_dir+'Model_During_'+str(e)+'_KL_training_'+'.torch')
                 #self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
                 exp_energy_x, hard_energy_x = self.sample_energy(num_samples=5000, temperature=temperature)
 
@@ -418,9 +422,10 @@ class NormalizingFlowModel(nn.Module):
 
         return losses_dict
 
-    def ML_loss(self, z ,log_det, std=1.0):
-        return - (log_det - (0.5 / (std**2)) * torch.sum(z**2, dim=1))
-
+    '''def ML_loss(self, z ,forward_log_prob, std=1.0):
+        return - forward_log_prob
+        #return - (log_det - (0.5 / (std**2)) * torch.sum(z**2, dim=1))
+    '''
     def entropy_seq(self, x):
         """Takes in a batch of sequences of shape 'batchsize x protein length x # AAs' 
         that have been softmaxed and computes their entropy"""
@@ -438,8 +443,25 @@ class NormalizingFlowModel(nn.Module):
         inp = F.softmax(inp,dim=-1)
         return inp
 
-    def KL_loss(self, x, log_det, high_energy=10, 
-    max_energy=100, temperature_factors=1.0, explore=1.0, entropy_weight=1.0):
+    def linlogcut(self, x, a=-2, b=-5):
+        '''when above b it is linear. then it is log above a. then it is constant
+        Implementation has been reversed from original Boltzmann generators. 
+
+        y = x                  x >= b
+        y = a + log(x-a)   a < x < b
+        y = a + log(b-a)   x < a
+        
+        '''
+        x, a, b = -x, -a, -b
+        x = torch.where(x < b, x, b * torch.ones_like(x))
+        # log after a
+        y = a + torch.where(x < a, x - a, torch.log(x - a + 1))
+        # make sure everything is finite
+        y = torch.where(torch.isfinite(y), y, b * torch.ones_like(y))
+        return -y
+
+    def KL_loss(self, x, log_det, high_energy=-1, 
+    max_energy=-4, temperature_factors=1.0, explore=1.0, entropy_weight=1.0):
         # explore is responsible for how large the log determinant should be. 
         batch_size = x.shape[0]
 
@@ -451,8 +473,8 @@ class NormalizingFlowModel(nn.Module):
         #E = self.energy_model.discrete_energy_tf(x, b)
         #print('these are the energy rewards', E.shape)
 
-        # energy clipping for the unstable NVP training. 
-        #Ereg = -linlogcut(-E, high_energy, max_energy, tf=True)
+        # energy clipping for unstable training. 
+        #E = self.linlogcut(E, high_energy, max_energy)
 
         #print('log det', log_det.shape)
         
