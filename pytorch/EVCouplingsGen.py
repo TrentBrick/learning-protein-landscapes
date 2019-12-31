@@ -6,7 +6,7 @@ from scipy.special import softmax
 from torch.autograd import Variable
 class EVCouplingsGenerator(object):
 
-    def __init__(self, protein_length, aa_num, h ,J):
+    def __init__(self, protein_length, aa_num, h ,J, device):
         # set parameters
         self.a2n = dict([(a, n) for n, a in enumerate('ACDEFGHIKLMNPQRSTVWY-')])
         self.AA_num = aa_num
@@ -19,11 +19,11 @@ class EVCouplingsGenerator(object):
 
         self.h = h # numpy versions of the hamiltonian energy weights. 
         self.J =J_numpy
-        self.h_torch = torch.unsqueeze(Variable(torch.from_numpy(h), requires_grad=False), 1)  
+        self.h_torch = torch.unsqueeze(Variable(torch.from_numpy(h), requires_grad=False), 1).to(device)  
         J_torch = Variable(torch.from_numpy(J_numpy), requires_grad=False)
         #J_tf = tf.transpose(J, [0,2,1,3])
         #J_tf = tf.reshape(J_tf,(protein_length*aa_num,protein_length*aa_num))
-        self.J_torch = J_torch.float()
+        self.J_torch = J_torch.float().to(device)
         self.dim = protein_length*self.AA_num
 
     def aa_to_oh(self, labels):

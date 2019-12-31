@@ -25,6 +25,7 @@ from evcouplings.couplings import CouplingsModel
 from EVCouplingsStuff.seq_sele import *
 
 from metropolis import MetropolisHastings
+from utils import *
 
 from nflib.MADE import *
 from nflib.flows import *
@@ -60,7 +61,7 @@ def main(params):
 
     # write out all of the parameters used into a text file: 
     with open(experiment_dir+ 'params_used.txt', 'w') as file:
-        file.write(json.dumps(params))
+        file.write(json.dumps(params, cls=NumpyEncoder))
 
     # Loading in EVCouplings model 
     focus_seqs = read_fa('EVCouplingsStuff/DYR_ECOLI_1_b0.5.a2m_trimmed.fa')
@@ -101,10 +102,10 @@ def main(params):
     plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=100)'''
 
     # loading in the environment class, used to score the evolutionary hamiltonians
-    gen_model = EVCouplingsGenerator(L, AA, h, J)
+    gen_model = EVCouplingsGenerator(L, AA, h, J, device)
 
     if params['MCMC'] == True:
-        nsteps = 1000
+        nsteps = 3000
         sampler = MetropolisHastings(gen_model, noise=5, 
                              stride=5, mapper=None, 
                              is_discrete=True, AA_num=AA)
@@ -136,6 +137,9 @@ def main(params):
         # setting the onehot to the new params['dequantize']d sequences
         data = for_mut
 
+    # make data a torch tensor
+    data = torch.from_numpy(data).float().to(device)
+
     # make train test split
     rand_inds = np.random.choice(np.arange(data.shape[0]), params['tda'], replace=False)
     train_set = rand_inds[: (params['tda']//2) ]
@@ -148,14 +152,14 @@ def main(params):
     # plotting the training and Xval dataset energy histograms: 
     for dset, name in zip([x, xval], ['Train', 'XVal']):
         plt.figure()
-        scores = gen_model.energy(dset)
+        scores = gen_model.energy(dset.cpu().detach().numpy())
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'Expectation_Sequences_'+name+'_Data_Hist.png', dpi=100)
         plt.close()
 
         plt.figure()
         oh = dset.reshape(dset.shape[0], -1, AA)
-        scores = gen_model.energy(oh.argmax(-1))
+        scores = gen_model.energy(oh.argmax(-1).cpu().detach().numpy())
         plt.hist(scores, bins=250)
         plt.gcf().savefig(experiment_dir+'ArgMax_Sequences_'+name+'_Data_Hist.png', dpi=100)
         plt.close()
@@ -198,6 +202,7 @@ def main(params):
         flows = list(itertools.chain(*zip(norms, convs, flows)))
 
     network = NormalizingFlowModel(base, flows, gen_model)
+    network.flow.to(device)
 
     #network = invnet(gen_model.dim, params['model_architecture'], gen_model, nl_layers=3, nl_hidden=100, 
     #                            nl_activation=params['nl_activation'],is_discrete=True)#, params['nl_activation']_scale=params['nl_activation']_scale)
@@ -205,7 +210,8 @@ def main(params):
     # TODO: Enable loading in of model, use crypto code to get this working. 
     
     if params['load_model'] != 'None':			
-        network.flow.load_state_dict(torch.load('experiments/'+params['load_model']))		
+        network.flow.load_state_dict(torch.load('experiments/'+params['load_model']))		 
+    
 
     if params['MLepochs']>0:
         # only ML training. 

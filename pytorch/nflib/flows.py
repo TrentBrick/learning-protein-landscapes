@@ -299,7 +299,7 @@ class NormalizingFlowModel(nn.Module):
         return xs
     
     def sample_energy(self, num_samples=5000, temperature=1.0):
-        sample_x = self.sample(num_samples=num_samples, temperature=temperature ).detach().numpy()
+        sample_x = self.sample(num_samples=num_samples, temperature=temperature ).cpu().detach().numpy()
         exp_energy_x = self.energy_model.energy(sample_x) / temperature
         # want to arg max these sequences. Using numpy commands as .energy is in numpy rather than tensorflow. 
         h_max = np.reshape(sample_x, (num_samples, self.energy_model.L, self.energy_model.AA_num ))
@@ -346,7 +346,7 @@ class NormalizingFlowModel(nn.Module):
                 # sample training data: 
                 #TODO: Develop a dataloader to make this faster
                 rand_inds = np.random.choice(np.arange(len(x)), batch_size)
-                data = torch.from_numpy(x[rand_inds]).float()
+                data = x[rand_inds]
 
                 # forward and reverse are actually the other way around here. 
                 zs, prior_logprob, forward_log_det = self.forward( data )
@@ -381,22 +381,22 @@ class NormalizingFlowModel(nn.Module):
             torch.nn.utils.clip_grad_norm(self.flow.parameters(), clipnorm)
             optimizer.step()
             
-            losses_dict['total_loss'].append(total_loss.detach().numpy())
+            losses_dict['total_loss'].append(total_loss.item())
             if weight_ML>0.0:
-                losses_dict['ml_loss'].append(loss_ML.sum().detach().numpy())
+                losses_dict['ml_loss'].append(loss_ML.sum().item())
             if weight_KL>0.0:
-                losses_dict['kl_loss'].append(loss_KL.sum().detach().numpy())
-                losses_dict['ent_loss'].append(ent_loss.detach().numpy())
-                losses_dict['ld_loss'].append(ld_loss.detach().numpy())
+                losses_dict['kl_loss'].append(loss_KL.sum().item())
+                losses_dict['ent_loss'].append(ent_loss.item())
+                losses_dict['ld_loss'].append(ld_loss.item())
             
             if e%1==0:
                 print('===================')
                 print('epoch:',e, 'Total loss:',total_loss.item())
 
                 if weight_KL>0.0 and weight_ML>0.0: # else total loss will have the same info
-                    print( "Loss KL:", loss_KL.sum().detach().numpy() )
-                    print("Loss Log Det:", ld_loss.detach().numpy())
-                    print( "Loss ML:", loss_ML.sum().detach().numpy() )
+                    print( "Loss KL:", loss_KL.sum().item() )
+                    print("Loss Log Det:", ld_loss.item())
+                    print( "Loss ML:", loss_ML.sum().item() )
 
             #TODO: add in xval dataset
 
