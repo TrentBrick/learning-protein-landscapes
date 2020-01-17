@@ -44,11 +44,11 @@ def initialize_parameters():
                         help='training data amount. Will assert that it is less than the total amount of data. \
                             Currently also splits this equally and randomly into train and test')            
     parser.add_argument('--MLbatch', type=int, action='store', nargs='+',
-                        default = [124],
+                        default = [5120],
                         help='Batchsize for ML')
     parser.add_argument('--KLbatch', type=int, action='store', nargs='+',
-                        default = [124],
-                        help='Batchsize for KL')
+                        default = [10240],
+                        help='Batchsize for KL. This is the number of samples for both ML and KL here.')
     parser.add_argument('--temperature', type=float, action='store', nargs='+',
                         default = [1.0],
                         help='temperature used to sample from the latent (can introduce more std)')
@@ -98,8 +98,8 @@ def initialize_parameters():
                         default = [True],
                         help='Training data using MCMC rather than natural sequences')
     parser.add_argument('--random_seed', type=int, action='store', nargs='+',
-                        default = [27],
-                        help='the random seed used')
+                        default = [0],
+                        help='the random seed used. If set to 0 it will choose a random number.')
 
     args = parser.parse_args()
     run_model_str = args.run_model[0]

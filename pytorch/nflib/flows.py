@@ -345,7 +345,7 @@ class NormalizingFlowModel(nn.Module):
 
                 # sample training data: 
                 #TODO: Develop a dataloader to make this faster
-                rand_inds = np.random.choice(np.arange(len(x)), batch_size)
+                rand_inds = np.random.choice(np.arange(len(x)), batch_size) # replace is True
                 data = x[rand_inds]
 
                 # forward and reverse are actually the other way around here. 
@@ -365,6 +365,7 @@ class NormalizingFlowModel(nn.Module):
                 latents = self.sample(batch_size)
                 xs, backward_log_det = self.backward(latents)
 
+                # ld_loss and ent_loss are only for reporting. they are combined into the KL_loss. 
                 loss_KL, ld_loss, ent_loss = self.KL_loss(xs, backward_log_det, 
                     temperature_factors=temperature, explore=explore, 
                     entropy_weight=entropy_weight)
@@ -378,32 +379,32 @@ class NormalizingFlowModel(nn.Module):
             #print(total_loss.shape)
             total_loss = total_loss.sum() / batch_size
             total_loss.backward()
-            torch.nn.utils.clip_grad_norm(self.flow.parameters(), clipnorm)
+            torch.nn.utils.clip_grad_norm_(self.flow.parameters(), clipnorm)
             optimizer.step()
             
             losses_dict['total_loss'].append(total_loss.item())
             if weight_ML>0.0:
-                losses_dict['ml_loss'].append(loss_ML.sum().item())
+                losses_dict['ml_loss'].append( (loss_ML.sum()/batch_size).item() )
             if weight_KL>0.0:
-                losses_dict['kl_loss'].append(loss_KL.sum().item())
-                losses_dict['ent_loss'].append(ent_loss.item())
-                losses_dict['ld_loss'].append(ld_loss.item())
+                losses_dict['kl_loss'].append( (loss_KL.sum()/batch_size).item() )
+                losses_dict['ent_loss'].append( (ent_loss/batch_size).item())
+                losses_dict['ld_loss'].append( (ld_loss/batch_size).item())
             
             if e%1==0:
                 print('===================')
                 print('epoch:',e, 'Total loss:',total_loss.item())
 
                 if weight_KL>0.0 and weight_ML>0.0: # else total loss will have the same info
-                    print( "Loss KL:", loss_KL.sum().item() )
-                    print("Loss Log Det:", ld_loss.item())
-                    print( "Loss ML:", loss_ML.sum().item() )
+                    print( "Loss KL:", (loss_KL.sum()/batch_size).item() )
+                    print("Loss Log Det:", (ld_loss/batch_size).item())
+                    print( "Loss ML:", (loss_ML.sum()/batch_size).item() )
 
             #TODO: add in xval dataset
 
             if save_partway_inter is not None and (e+1)%save_partway_inter==0: 
 
                 # save the neural network: 
-                torch.save(self.flow, experiment_dir+'Model_During_'+str(e)+'_KL_training_'+'.torch')
+                torch.save(self.flow.state_dict(), experiment_dir+'Model_During_'+str(e)+'_KL_training_'+'.torch')
                 #self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
                 exp_energy_x, hard_energy_x = self.sample_energy(num_samples=5000, temperature=temperature)
 

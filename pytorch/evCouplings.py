@@ -46,6 +46,10 @@ def main(params):
     # timing the entire run. 
     start_time = time.time()
 
+    if params['random_seed'] == 0:
+        params['random_seed'] = np.random.randint(1,100)
+
+
     # setting the random seeds
     torch.manual_seed(params['random_seed'])
     np.random.seed(params['random_seed'])
@@ -218,7 +222,7 @@ def main(params):
 
         ML_losses = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['MLepochs'], batch_size=params['MLbatch'], 
                                                     verbose=params['verbose'], clipnorm=params['gradient_clip'], weight_KL=0.0,
-                                                    save_partway_inter=params['save_partway_inter'])
+                                                    save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir)
 
         ML_losses = ML_losses['total_loss']
 
