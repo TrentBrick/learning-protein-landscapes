@@ -16,8 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reversible layers. 
-Seems like this code is able to take in an underlying flow and then make it so that it is discrete? """
+"""Reversible layers. Seems like this code is able to take in an underlying flow and then make it so that it is discrete? """
 
 from __future__ import absolute_import
 from __future__ import division
