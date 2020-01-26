@@ -98,15 +98,15 @@ def main(params):
     oh = oh.reshape(oh.shape[0], -1)
     print('number and dimensions of the natural sequences', oh.shape)
 
-    # plotting the distribution of natural sequences used to train the model. As I already know what they look like I have commented this out. 
-    '''plt.figure()
-    print('Plotting a hist of all the natural sequences energies:')
-    plt.hist(gen_model.energy(enc_seqs))
-    #plt.show()
-    plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=100)'''
-
     # loading in the environment class, used to score the evolutionary hamiltonians
     gen_model = EVCouplingsGenerator(L, AA, h, J, device)
+
+    # plotting the distribution of natural sequences used to train the model. 
+    if params['protein_length'] >2: # As i know what 2 already looks like I dont want to see it. 
+        plt.figure()
+        print('Plotting a hist of all the natural sequences energies:')
+        plt.hist(gen_model.energy(enc_seqs))
+        plt.gcf().savefig(experiment_dir+'HistofNatSeqs.png', dpi=100)
 
     if params['MCMC'] == True:
         nsteps = 3000
