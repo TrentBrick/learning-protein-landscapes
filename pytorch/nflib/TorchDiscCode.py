@@ -1,7 +1,6 @@
 """
-Questions: 
-What do forward and reverse mean here? 
-what is tf.split?
+Code taken from: https://github.com/google/edward2/blob/master/edward2/tensorflow/layers/discrete_flows.py
+And modified for PyTorch. 
 
 coprime means that the largest divisor for two numbers is 1. 
 
@@ -39,7 +38,6 @@ class DiscreteAutoFlowModel(nn.Module):
             x = flow.reverse(x)
         return x
 
-# TODO(trandustin): Move Reverse to another module(?).
 class Reverse(nn.Module):
   """Swaps the forward and reverse transformations of a layer."""
 
@@ -238,6 +236,7 @@ class DiscreteAutoregressiveFlow(nn.Module):
     #  self._maybe_build(inputs)
 
     net = self.layer(inputs, **kwargs)
+    print('shape of neural net output', net.shape)
     #print('reverse net output', net.shape)
     if net.shape[-1] == 2 * self.vocab_size:
       loc, scale = torch.split(net, self.vocab_size, dim=-1)
@@ -252,6 +251,113 @@ class DiscreteAutoregressiveFlow(nn.Module):
     #print('reverse loc', loc.shape)
     outputs = disc_utils.one_hot_add(scaled_inputs, loc )
     #print(outputs.shape)
+    return outputs
+
+  def log_det_jacobian(self, inputs):
+    return torch.zeros((1)).type(inputs.dtype)
+
+# Discrete Bipartite Flow
+class DiscreteBipartiteFlow(nn.Module):
+  """A discrete reversible layer.
+  The flow takes as input a one-hot Tensor of shape `[..., length, vocab_size]`.
+  The flow returns a Tensor of same shape and dtype. (To enable gradients, the
+  input must have float dtype.)
+  For the forward pass, the flow computes:
+  ```none
+  net = layer(mask * inputs)
+  loc, scale = tf.split(net, 2, axis=-1)
+  loc = tf.argmax(loc, axis=-1)
+  scale = tf.argmax(scale, axis=-1)
+  outputs = ((inputs - (1-mask) * loc) * (1-mask) * inverse(scale)) % vocab_size
+  ```
+  For the reverse pass, the flow computes:
+  ```none
+  net = layer(mask * inputs)
+  loc, scale = tf.split(net, 2, axis=-1)
+  loc = tf.argmax(loc, axis=-1)
+  scale = tf.argmax(scale, axis=-1)
+  outputs = ((1-mask) * loc + (1-mask) * scale * inputs) % vocab_size
+  ```
+  The modular arithmetic happens in one-hot space.
+  If `x` is a discrete random variable, the induced probability mass function on
+  the outputs `y = flow(x)` is
+  ```none
+  p(y) = p(flow.reverse(y)).
+  ```
+  The location-only transform is always invertible ([integers modulo
+  `vocab_size` form an additive group](
+  https://en.wikipedia.org/wiki/Modular_arithmetic)). The transform with a scale
+  is invertible if the scale and `vocab_size` are coprime (see
+  [prime fields](https://en.wikipedia.org/wiki/Finite_field)).
+  """
+
+  def __init__(self, layer, mask, temperature, vocab_size):
+    """Constructs flow.
+    Args:
+      layer: Two-headed masked network taking the inputs and returning a
+        real-valued Tensor of shape `[..., length, 2*vocab_size]`.
+        Alternatively, `layer` may return a Tensor of shape
+        `[..., length, vocab_size]` to be used as the location transform; the
+        scale transform will be hard-coded to 1.
+      mask: binary Tensor of shape `[length]` forming the bipartite assignment.
+      temperature: Positive value determining bias of gradient estimator.
+      **kwargs: kwargs of parent class.
+    """
+    super().__init__()
+    self.layer = layer
+    self.mask = torch.tensor(mask).float()
+    self.temperature = temperature
+    self.vocab_size = vocab_size
+
+  '''def __call__(self, inputs, *args, **kwargs):
+    if not isinstance(inputs, random_variable.RandomVariable):
+      return super(DiscreteBipartiteFlow, self).__call__(
+          inputs, *args, **kwargs)
+    return transformed_random_variable.TransformedRandomVariable(inputs, self)'''
+
+  def forward(self, inputs, **kwargs):
+    """Forward pass for bipartite generation."""
+    batch_ndims = len(inputs.shape) - 2
+    #mask = self.mask.view([1] * batch_ndims + [-1, 1]) 
+    masked_inputs = self.mask * inputs
+    net = self.layer(masked_inputs, **kwargs)
+    if net.shape[-1] == 2 * self.vocab_size: # have a location and scaling parameter
+      loc, scale = torch.split(net, self.vocab_size, dim=-1)
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type( inputs.dtype)
+      scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
+      inverse_scale = disc_utils.multiplicative_inverse(scale, self.vocab_size)
+      shifted_inputs = disc_utils.one_hot_minus(inputs, loc)
+      masked_outputs = (1.0 - mask) * disc_utils.one_hot_multiply(shifted_inputs,
+                                                            inverse_scale)
+    elif net.shape[-1] == self.vocab_size:
+      loc = net
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type( inputs.dtype)
+      masked_outputs = (1.0 - mask) * disc_utils.one_hot_minus(inputs, loc)
+    else:
+      raise ValueError('Output of layer does not have compatible dimensions.')
+    outputs = masked_inputs + masked_outputs
+    return outputs
+
+  def reverse(self, inputs, **kwargs):
+    """Reverse pass for the inverse bipartite transformation."""
+    inputs = inputs
+    batch_ndims = len(inputs.shape) - 2
+    #mask = self.mask.view([1] * batch_ndims + [-1, 1])
+    masked_inputs = self.mask * inputs
+    net = self.layer(masked_inputs, **kwargs)
+    print('net output shape', net.shape)
+    if net.shape[-1] == 2 * self.vocab_size:
+      loc, scale = torch.split(net, self.vocab_size, dim=-1)
+      scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
+      scaled_inputs = disc_utils.one_hot_multiply(inputs, scale)
+    elif net.shape[-1] == self.vocab_size:
+      loc = net
+      scaled_inputs = inputs
+    else:
+      raise ValueError('Output of layer does not have compatible dimensions.')
+    loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
+    masked_outputs = (1.0 - mask) * disc_utils.one_hot_add(loc, scaled_inputs)
+    outputs = masked_inputs + masked_outputs
     return outputs
 
   def log_det_jacobian(self, inputs):

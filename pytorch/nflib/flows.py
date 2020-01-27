@@ -278,7 +278,7 @@ class NormalizingFlow(nn.Module):
 class NormalizingFlowModel(nn.Module):
     """ A Normalizing Flow Model is a (prior, flow) pair """
     
-    def __init__(self, prior, flows, energy_model):
+    def __init__(self, prior, flows, energy_model=None):
         super().__init__()
         self.prior = prior
         self.flow = NormalizingFlow(flows)
