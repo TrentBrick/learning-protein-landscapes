@@ -92,10 +92,12 @@ class AffineHalfFlow(nn.Module):
     - RealNVP both scales and shifts (default)
     - NICE only shifts
     """
-    def __init__(self, dim, parity, net_class=MLP, nh=24, scale=True, shift=True):
+    def __init__(self, dim, parity, net_class=MLP, nh=24, scale=True, shift=True, block_mask=True):
+        # block mask splits in half down the middle. if false then it does even odd. 
         super().__init__()
         self.dim = dim
         self.parity = parity
+        self.block_mask = block_mask
         self.s_cond = lambda x: x.new_zeros(x.size(0), self.dim // 2)
         self.t_cond = lambda x: x.new_zeros(x.size(0), self.dim // 2)
         if scale:
@@ -104,7 +106,11 @@ class AffineHalfFlow(nn.Module):
             self.t_cond = net_class(self.dim // 2, self.dim // 2, nh)
         
     def forward(self, x):
-        x0, x1 = x[:,::2], x[:,1::2]
+        # there is a bug here where the concat operation fails!
+        if self.block_mask: 
+            x0, x1 = x[:,:self.dim//2], x[:,self.dim//2:]
+        else: 
+            x0, x1 = x[:,::2], x[:,1::2]
         if self.parity:
             x0, x1 = x1, x0
         s = self.s_cond(x0)
@@ -113,21 +119,36 @@ class AffineHalfFlow(nn.Module):
         z1 = torch.exp(s) * x1 + t # transform this half as a function of the other
         if self.parity:
             z0, z1 = z1, z0
-        z = torch.cat([z0, z1], dim=1)
+        if self.block_mask:
+            z = torch.cat([z0, z1], dim=1)
+        else: 
+            z = torch.zeros((x.shape[0], self.dim))  
+            z[:,::2] = z0
+            z[:,1::2] = z1
         log_det = torch.sum(s, dim=1)
         return z, log_det
     
     def backward(self, z):
-        z0, z1 = z[:,::2], z[:,1::2]
+        #print(z.shape)
+        if self.block_mask: 
+            z0, z1 = z[:,:self.dim//2], z[:,self.dim//2:]
+        else: 
+            z0, z1 = z[:,::2], z[:,1::2]
         if self.parity:
             z0, z1 = z1, z0
+        #print(z0.shape)
         s = self.s_cond(z0)
         t = self.t_cond(z0)
         x0 = z0 # this was the same
         x1 = (z1 - t) * torch.exp(-s) # reverse the transform on this half
         if self.parity:
             x0, x1 = x1, x0
-        x = torch.cat([x0, x1], dim=1)
+        if self.block_mask:
+            x = torch.cat([x0, x1], dim=1)
+        else: 
+            x = torch.zeros((z.shape[0], self.dim))  
+            x[:,::2] = x0
+            x[:,1::2] = x1
         log_det = torch.sum(-s, dim=1)
         return x, log_det
 

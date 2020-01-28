@@ -7,11 +7,21 @@ import numpy as np
 
 def one_hot_argmax(inputs, temperature, axis=-1):
     """Returns one-hot of argmax with backward pass set to softmax-temperature."""
+    autoreg=False
+    if len(inputs.shape) == 3:
+        autoreg=True
+    
     vocab_size = inputs.shape[-1]
     hard = torch.argmax(inputs, dim=axis).flatten().long().unsqueeze(1) # for some reason needs to be of type long. 
-    z = torch.zeros((inputs.shape[0] * inputs.shape[1], vocab_size))
+    if autoreg:
+        z = torch.zeros((inputs.shape[0] * inputs.shape[1], vocab_size))
+    else: 
+        z = torch.zeros((inputs.shape[0], vocab_size))
     z.scatter_(1,hard,1)
-    z = z.view(inputs.shape[0], inputs.shape[1], vocab_size)
+    if autoreg:
+        z = z.view(inputs.shape[0], inputs.shape[1], vocab_size)
+    else: 
+        z = z.view(inputs.shape[0], vocab_size)
     soft = F.softmax(inputs / temperature, dim=axis)
     outputs = soft + (z - soft).detach()
     return outputs
@@ -35,8 +45,8 @@ def multiplicative_inverse(a, n):
     Returns:
         Tensor of same shape and dtype as a.
     """
-    a = torch.tensor(a)
-    n = torch.tensor(n)
+    #a = torch.tensor(a)
+    #n = torch.tensor(n)
     vocab_size = a.shape[-1]
     a_dtype = a.dtype
     sparse_a = torch.argmax(a, dim=-1)
@@ -112,7 +122,7 @@ def one_hot_minus(inputs, shift):
         Tensor of same shape and dtype as inputs.
     """
     # TODO(trandustin): Implement with circular conv1d.
-    inputs = torch.tensor(inputs)
+    #inputs = torch.tensor(inputs)
     shift = shift.type( inputs.dtype)
     vocab_size = inputs.shape[-1]
     # Form a [..., vocab_size, vocab_size] matrix. Each batch element of
@@ -137,17 +147,17 @@ def one_hot_add(inputs, shift):
     Returns:
         Tensor of same shape and dtype as inputs.
     """
-    # TODO(trandustin): Implement with circular conv1d.
-    inputs = torch.tensor(inputs)
-    shift = shift.type( inputs.dtype)
+    shift = shift.type(inputs.dtype)
     vocab_size = inputs.shape[-1]
     # Form a [..., vocab_size, vocab_size] matrix. Each batch element of
     # inputs will vector-matrix multiply the vocab_size x vocab_size matrix. This
     # "shifts" the inputs batch element by the corresponding shift batch element.
     shift_matrix = torch.stack([torch.roll(shift, i, dims=-1)
                             for i in range(vocab_size)], dim=-2)
+    #print('shift matrix pre transpose', shift_matrix)
     shift_matrix = torch.transpose(shift_matrix, -1, -2)
     outputs = torch.einsum('...v,...uv->...u', inputs, shift_matrix)
+    #print('where does the gradient gooooo', inputs, shift_matrix, outputs)
     return outputs
 
 def one_hot_multiply(inputs, scale):
@@ -164,7 +174,7 @@ def one_hot_multiply(inputs, scale):
     Tensor of same shape and dtype as inputs.
     """
     # TODO(trandustin): Implement with circular conv1d.
-    inputs = torch.tensor(inputs)
+    #inputs = torch.tensor(inputs)
     scale = scale.type( inputs.dtype)
     batch_shape = list(inputs.shape[:-1])
     vocab_size = inputs.shape[-1]
@@ -188,6 +198,6 @@ def one_hot_multiply(inputs, scale):
     return outputs
 
 def floorMod(a,b):
-    a = torch.tensor(a).float()
-    b= torch.tensor(b).float()
+    #a = torch.tensor(a).float()
+    #b= torch.tensor(b).float()
     return a - (torch.floor(torch.div(a,b))*b)

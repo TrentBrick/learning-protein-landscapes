@@ -97,6 +97,9 @@ def initialize_parameters():
     parser.add_argument('--MCMC', type=buildBool, action='store', nargs='+',
                         default = [True],
                         help='Training data using MCMC rather than natural sequences')
+    parser.add_argument('--block_mask', type=buildBool, action='store', nargs='+',
+                        default = [True],
+                        help='Use a block rather than an even odd masking for Bipartite models.')
     parser.add_argument('--random_seed', type=int, action='store', nargs='+',
                         default = [0],
                         help='the random seed used. If set to 0 it will choose a random number.')

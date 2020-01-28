@@ -236,7 +236,7 @@ class DiscreteAutoregressiveFlow(nn.Module):
     #  self._maybe_build(inputs)
 
     net = self.layer(inputs, **kwargs)
-    print('shape of neural net output', net.shape)
+    #print('shape of neural net output', net.shape)
     #print('reverse net output', net.shape)
     if net.shape[-1] == 2 * self.vocab_size:
       loc, scale = torch.split(net, self.vocab_size, dim=-1)
@@ -249,7 +249,7 @@ class DiscreteAutoregressiveFlow(nn.Module):
       raise ValueError('Output of layer does not have compatible dimensions.')
     loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
     #print('reverse loc', loc.shape)
-    outputs = disc_utils.one_hot_add(scaled_inputs, loc )
+    outputs = disc_utils.one_hot_add(scaled_inputs, loc)
     #print(outputs.shape)
     return outputs
 
@@ -291,7 +291,7 @@ class DiscreteBipartiteFlow(nn.Module):
   [prime fields](https://en.wikipedia.org/wiki/Finite_field)).
   """
 
-  def __init__(self, layer, mask, temperature, vocab_size):
+  def __init__(self, layer, parity, temperature, vocab_size, dim):
     """Constructs flow.
     Args:
       layer: Two-headed masked network taking the inputs and returning a
@@ -305,9 +305,10 @@ class DiscreteBipartiteFlow(nn.Module):
     """
     super().__init__()
     self.layer = layer
-    self.mask = torch.tensor(mask).float()
+    self.parity = parity # going to do a block split. #torch.tensor(mask).float()
     self.temperature = temperature
     self.vocab_size = vocab_size
+    self.dim = dim # total dimension of the vector being dealt with. 
 
   '''def __call__(self, inputs, *args, **kwargs):
     if not isinstance(inputs, random_variable.RandomVariable):
@@ -317,48 +318,75 @@ class DiscreteBipartiteFlow(nn.Module):
 
   def forward(self, inputs, **kwargs):
     """Forward pass for bipartite generation."""
+    #TODO: implement even odd shuffling. 
     batch_ndims = len(inputs.shape) - 2
-    #mask = self.mask.view([1] * batch_ndims + [-1, 1]) 
-    masked_inputs = self.mask * inputs
-    net = self.layer(masked_inputs, **kwargs)
-    if net.shape[-1] == 2 * self.vocab_size: # have a location and scaling parameter
-      loc, scale = torch.split(net, self.vocab_size, dim=-1)
-      loc = disc_utils.one_hot_argmax(loc, self.temperature).type( inputs.dtype)
+    #mask = self.mask.view([1] * batch_ndims + [-1, 1])
+     
+    assert len(inputs.shape) ==2, 'need to flatten the inputs first!!!'
+    z0, z1 = inputs[:,:self.dim//2], inputs[:,self.dim//2:]
+
+    if self.parity:
+      z0, z1 = z1, z0
+    #masked_inputs = self.mask * inputs
+    x0 = z0 
+    layer_outs = self.layer(x0, **kwargs)
+    if layer_outs.shape[-1] == 2 * self.vocab_size: # have a location and scaling parameter
+      loc, scale = torch.split(layer_outs, self.vocab_size, dim=-1)
+      loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
       scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
       inverse_scale = disc_utils.multiplicative_inverse(scale, self.vocab_size)
-      shifted_inputs = disc_utils.one_hot_minus(inputs, loc)
-      masked_outputs = (1.0 - mask) * disc_utils.one_hot_multiply(shifted_inputs,
+      shifted_inputs = disc_utils.one_hot_minus(z1, loc)
+
+      x1 = disc_utils.one_hot_multiply(shifted_inputs,
                                                             inverse_scale)
-    elif net.shape[-1] == self.vocab_size:
-      loc = net
+      #masked_outputs = (1.0 - self.mask) * disc_utils.one_hot_multiply(shifted_inputs,
+      #                                                      inverse_scale)
+
+    elif layer_outs.shape[-1] == self.vocab_size:
+      loc = layer_outs
       loc = disc_utils.one_hot_argmax(loc, self.temperature).type( inputs.dtype)
-      masked_outputs = (1.0 - mask) * disc_utils.one_hot_minus(inputs, loc)
+      x1 = disc_utils.one_hot_minus(z1, loc)
+      #masked_outputs = (1.0 - self.mask) * disc_utils.one_hot_minus(inputs, loc)
     else:
       raise ValueError('Output of layer does not have compatible dimensions.')
-    outputs = masked_inputs + masked_outputs
-    return outputs
+    x = torch.cat([x0, x1], dim=1)
+    return x
 
   def reverse(self, inputs, **kwargs):
     """Reverse pass for the inverse bipartite transformation."""
-    inputs = inputs
+    #print(inputs.shape)
+    assert len(inputs.shape) ==2, 'need to flatten the inputs first!!!'
     batch_ndims = len(inputs.shape) - 2
     #mask = self.mask.view([1] * batch_ndims + [-1, 1])
-    masked_inputs = self.mask * inputs
-    net = self.layer(masked_inputs, **kwargs)
-    print('net output shape', net.shape)
-    if net.shape[-1] == 2 * self.vocab_size:
-      loc, scale = torch.split(net, self.vocab_size, dim=-1)
+    #masked_inputs = self.mask * inputs
+
+    x0, x1 = inputs[:,:self.dim//2], inputs[:,self.dim//2:]
+    if self.parity:
+      x0, x1 = x1, x0
+    #masked_inputs = self.mask * inputs
+    z0 = x0 
+    layer_outs = self.layer(z0, **kwargs)
+    #print('net output shape', net.shape)
+    if layer_outs.shape[-1] == 2 * self.vocab_size:
+      loc, scale = torch.split(layer_outs, self.vocab_size, dim=-1)
       scale = disc_utils.one_hot_argmax(scale, self.temperature).type(inputs.dtype)
-      scaled_inputs = disc_utils.one_hot_multiply(inputs, scale)
-    elif net.shape[-1] == self.vocab_size:
-      loc = net
-      scaled_inputs = inputs
+      scaled_inputs = disc_utils.one_hot_multiply(x1, scale)
+    elif layer_outs.shape[-1] == self.vocab_size:
+      #print('no scaling')
+      loc = layer_outs
+      scaled_inputs = x1
     else:
       raise ValueError('Output of layer does not have compatible dimensions.')
+    #print('loc is', loc.shape)
+    #print(z0.shape)
     loc = disc_utils.one_hot_argmax(loc, self.temperature).type(inputs.dtype)
-    masked_outputs = (1.0 - mask) * disc_utils.one_hot_add(loc, scaled_inputs)
-    outputs = masked_inputs + masked_outputs
-    return outputs
+    # applying to everything that was not masked. 
+    z1 = disc_utils.one_hot_add(loc, scaled_inputs)
+    z = torch.cat([z0, z1], dim=1)
+
+    #print(z0[0].sum(), z1[0].sum(), 'full z', z[0].sum(), loc[0].sum(), scaled_inputs[0].sum(), 'x1 multi', disc_utils.one_hot_add(loc, scaled_inputs)[0].sum())
+    #print('-----------')
+    return z
 
   def log_det_jacobian(self, inputs):
     return torch.zeros((1)).type(inputs.dtype)

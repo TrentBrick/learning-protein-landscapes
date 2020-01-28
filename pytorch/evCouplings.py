@@ -176,12 +176,12 @@ def main(params):
     if params['model_type'] == 'realNVP':
         # RealNVP
         # used to have 9 layers
-        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim']) for i in range(params['num_layers'])]
+        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim'], block_mask=params['block_mask']) for i in range(params['num_layers'])]
 
     if params['model_type'] == 'NICE':
         # NICE
         # 4 layers
-        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim'] ,scale=False) for i in range(params['num_layers'])]
+        flows = [AffineHalfFlow(dim=gen_model.dim, parity=i%2, nh=params['hidden_dim'] ,scale=False, block_mask=params['block_mask']) for i in range(params['num_layers'])]
         flows.append(AffineConstantFlow(dim=gen_model.dim, shift=False))
 
     if params['model_type'] == 'slowMAF':
