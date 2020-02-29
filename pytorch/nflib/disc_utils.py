@@ -1,5 +1,9 @@
-"""Utils for the discrete layers. Taken from https://github.com/google/edward2/blob/2077d67ab8a5c73c39b8d43ccc8cd036dc0a8566/edward2/tensorflow/layers/utils.py 
-And ported into pytorch. """
+"""
+author: trentbrick
+Utils for the discrete layers. Taken from https://github.com/google/edward2/blob/2077d67ab8a5c73c39b8d43ccc8cd036dc0a8566/edward2/tensorflow/layers/utils.py 
+Which is introduced and explained in the paper: https://arxiv.org/abs/1905.10347 
+And modified for PyTorch. 
+"""
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -10,7 +14,6 @@ def one_hot_argmax(inputs, temperature, axis=-1):
     autoreg=False
     if len(inputs.shape) == 3:
         autoreg=True
-    
     vocab_size = inputs.shape[-1]
     hard = torch.argmax(inputs, dim=axis).flatten().long().unsqueeze(1) # for some reason needs to be of type long. 
     if autoreg:
@@ -26,16 +29,6 @@ def one_hot_argmax(inputs, temperature, axis=-1):
     outputs = soft + (z - soft).detach()
     return outputs
 
-    '''
-    permutation_matrix = floorMod(torch.arange(vocab_size).unsqueeze(1).repeat(1,vocab_size) * torch.arange(vocab_size), 
-                                    vocab_size)
-    
-    z = torch.zeros((vocab_size*vocab_size,vocab_size))
-    p_f = permutation_matrix.flatten().long().unsqueeze(1)
-    z.scatter_(1,p_f,1)
-    permutation_matrix = z.view(vocab_size,vocab_size,vocab_size)
-    '''
-
 def multiplicative_inverse(a, n):
     """Multiplicative inverse of a modulo n.
     Args:
@@ -45,8 +38,6 @@ def multiplicative_inverse(a, n):
     Returns:
         Tensor of same shape and dtype as a.
     """
-    #a = torch.tensor(a)
-    #n = torch.tensor(n)
     vocab_size = a.shape[-1]
     a_dtype = a.dtype
     sparse_a = torch.argmax(a, dim=-1)
@@ -68,7 +59,6 @@ def py_multiplicative_inverse(a, n):
     """
     batched_a = np.asarray(a, dtype=np.int32)
     n = np.asarray(n, dtype=np.int32)
-    #print('n that is being set', n)
     batched_inverse = []
     for a in np.nditer(batched_a):
         inverse = 0
@@ -89,24 +79,6 @@ def py_multiplicative_inverse(a, n):
         batched_inverse.append(inverse)
     return np.asarray(batched_inverse, dtype=np.int32).reshape(batched_a.shape)
 
-'''def one_hot_add(inputs, shift): *** THIS CODE DOES NOT WORK THE CONVERSION TO TORCH FAILED
-    """Performs (inputs + shift) % vocab_size in the one-hot space.
-    Args:
-    inputs: Tensor of shape `[..., vocab_size]`. Typically a soft/hard one-hot
-        Tensor.
-    shift: Tensor of shape `[..., vocab_size]`. Typically a soft/hard one-hot
-        Tensor specifying how much to shift the corresponding one-hot vector in
-        inputs. Soft values perform a "weighted shift": for example,
-        shift=[0.2, 0.3, 0.5] performs a linear combination of 0.2 * shifting by
-        zero; 0.3 * shifting by one; and 0.5 * shifting by two.
-    Returns:
-    Tensor of same shape and dtype as inputs.
-    """
-    # Compute circular 1-D convolution with shift as the kernel.
-    #inputs = inputs.type(torch.complex64)
-    #shift = shift.type(tf.complex64)
-    return torch.irfft(torch.rfft(inputs,3) * torch.rfft(shift,3),3)'''
-
 
 def one_hot_minus(inputs, shift):
     """Performs (inputs - shift) % vocab_size in the one-hot space.
@@ -121,7 +93,7 @@ def one_hot_minus(inputs, shift):
     Returns:
         Tensor of same shape and dtype as inputs.
     """
-    # TODO(trandustin): Implement with circular conv1d.
+    # TODO: Implement with circular conv1d.
     #inputs = torch.tensor(inputs)
     shift = shift.type( inputs.dtype)
     vocab_size = inputs.shape[-1]
@@ -154,10 +126,8 @@ def one_hot_add(inputs, shift):
     # "shifts" the inputs batch element by the corresponding shift batch element.
     shift_matrix = torch.stack([torch.roll(shift, i, dims=-1)
                             for i in range(vocab_size)], dim=-2)
-    #print('shift matrix pre transpose', shift_matrix)
     shift_matrix = torch.transpose(shift_matrix, -1, -2)
     outputs = torch.einsum('...v,...uv->...u', inputs, shift_matrix)
-    #print('where does the gradient gooooo', inputs, shift_matrix, outputs)
     return outputs
 
 def one_hot_multiply(inputs, scale):
@@ -173,7 +143,7 @@ def one_hot_multiply(inputs, scale):
     Returns:
     Tensor of same shape and dtype as inputs.
     """
-    # TODO(trandustin): Implement with circular conv1d.
+    # TODO: Implement with circular conv1d.
     #inputs = torch.tensor(inputs)
     scale = scale.type( inputs.dtype)
     batch_shape = list(inputs.shape[:-1])
@@ -187,7 +157,6 @@ def one_hot_multiply(inputs, scale):
     p_f = permutation_matrix.flatten().long().unsqueeze(1)
     z.scatter_(1,p_f,1)
     permutation_matrix = z.view(vocab_size,vocab_size,vocab_size)
-
     # Scale the inputs according to the permutation matrix of all possible scales.
     scaled_inputs = torch.einsum('...v,avu->...au', inputs, permutation_matrix)
     scaled_inputs = torch.cat( (torch.zeros(batch_shape + [1, vocab_size]),
@@ -198,6 +167,4 @@ def one_hot_multiply(inputs, scale):
     return outputs
 
 def floorMod(a,b):
-    #a = torch.tensor(a).float()
-    #b= torch.tensor(b).float()
     return a - (torch.floor(torch.div(a,b))*b)

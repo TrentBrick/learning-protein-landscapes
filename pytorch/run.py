@@ -116,6 +116,9 @@ def initialize_parameters():
     if run_model_str == 'evCouplings.py':
         from evCouplings import main
         func_to_call = main
+    elif run_model_str == 'double_well_test.py':
+        from double_well_test import main
+        func_to_call = main
     '''elif run_model_str == 'basic_evCouplings.py':
         from basic_evCouplings import main
         func_to_call = main'''
