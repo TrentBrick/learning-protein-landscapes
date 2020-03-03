@@ -106,7 +106,6 @@ class AffineHalfFlow(nn.Module):
             self.t_cond = net_class(self.dim // 2, self.dim // 2, nh)
         
     def forward(self, x):
-        # there is a bug here where the concat operation fails!
         if self.block_mask: 
             x0, x1 = x[:,:self.dim//2], x[:,self.dim//2:]
         else: 
@@ -310,7 +309,7 @@ class NormalizingFlowModel(nn.Module):
         xs, log_det = self.flow.backward(z)
         return xs, prior_logprob, log_det
     
-    def sample(self, num_samples=10000, temperature=1.0):
+    def sample_xs(self, num_samples=10000, temperature=1.0):
         z = np.sqrt(temperature) * self.prior.sample((num_samples,))
         xs, _ = self.flow.backward(z)
         return xs
@@ -329,7 +328,7 @@ class NormalizingFlowModel(nn.Module):
         return xs.numpy(), logw
     
     def sample_energy(self, num_samples=5000, temperature=1.0):
-        sample_x = self.sample(num_samples=num_samples, temperature=temperature ).cpu().detach().numpy()
+        sample_x = self.sample_xs(num_samples=num_samples, temperature=temperature ).cpu().detach().numpy()
         exp_energy_x = self.energy_model.energy(sample_x) / temperature
         # want to arg max these sequences. Using numpy commands as .energy is in numpy rather than tensorflow. 
         if self.energy_model.is_discrete: 
@@ -390,7 +389,7 @@ class NormalizingFlowModel(nn.Module):
             if weight_KL > 0.0:
 
                 # sample Z values
-                latents = self.sample(batch_size)
+                latents = np.sqrt(temperature) * self.prior.sample((batch_size,))
                 xs, z_logprob, backward_log_det = self.backward(latents)
                 #backward_logprob = prior_logprob+backward_log_det
 
@@ -403,16 +402,16 @@ class NormalizingFlowModel(nn.Module):
 
             #print('total loss before the sum', total_loss)
             #print(total_loss.shape)
-            total_loss = total_loss.sum() / batch_size
+            total_loss = total_loss.mean()
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.flow.parameters(), clipnorm)
             optimizer.step()
             
             losses_dict['total_loss'].append(total_loss.item())
             if weight_ML>0.0:
-                losses_dict['ml_loss'].append( (loss_ML.sum()/batch_size).item() )
+                losses_dict['ml_loss'].append( loss_ML.mean().item() )
             if weight_KL>0.0:
-                losses_dict['kl_loss'].append( (loss_KL.sum()/batch_size).item() )
+                losses_dict['kl_loss'].append( loss_KL.mean().item() )
                 losses_dict['ent_loss'].append( (ent_loss/batch_size).item())
                 losses_dict['ld_loss'].append( (ld_loss/batch_size).item())
             
@@ -421,14 +420,14 @@ class NormalizingFlowModel(nn.Module):
                 print('epoch:',e, 'Total loss:',total_loss.item())
 
                 if weight_KL>0.0 and weight_ML>0.0: # else total loss will have the same info
-                    print( "Loss KL:", (loss_KL.sum()/batch_size).item() )
+                    print( "Loss KL:", loss_KL.mean().item() )
                     print("Loss Log Det:", (ld_loss/batch_size).item())
                     print( "Loss ML:", (loss_ML.sum()/batch_size).item() )
+            
 
             #TODO: add in xval dataset
 
             if save_partway_inter is not None and (e+1)%save_partway_inter==0: 
-
                 # save the neural network: 
                 torch.save(self.flow.state_dict(), experiment_dir+'Model_During_'+str(e)+'_KL_training_'+'.torch')
                 #self.save(experiment_dir+'Model_During_'+str(e)+'_KL_Training.tf')
@@ -510,6 +509,7 @@ class NormalizingFlowModel(nn.Module):
         #print( "sequence entropies", ent_loss.shape)
 
         ld_loss = (explore * log_det).float().unsqueeze(1)
-        #print('ld_loss', ld_loss.shape, 'ent loss', ent_loss.shape, 'E loss', E.shape)
+        #print('ld_loss', -ld_loss.mean().item(), 'E loss', -E.mean().item())
         loss = - E - ld_loss + ent_loss 
+        #print('total loss', loss.mean().item())
         return loss, -ld_loss.sum(), ent_loss.sum()

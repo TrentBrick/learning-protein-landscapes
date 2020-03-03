@@ -45,7 +45,7 @@ class DoubleWell(object):
             X = x_grid[:, None]
         else:
             X = np.hstack([x_grid[:, None], np.zeros((x_grid.size, self.dim - 1))])
-        # flipping the energy
+        # flipping the energy again so that it plots the desirable direction
         energies = - (self.energy(X) / temperature)
 
         import matplotlib.pyplot as plt

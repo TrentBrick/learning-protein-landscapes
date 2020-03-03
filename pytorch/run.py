@@ -95,7 +95,7 @@ def initialize_parameters():
                         default = [False],
                         help='dequantize the training data')
     parser.add_argument('--gradient_clip', type=float, action='store', nargs='+',
-                        default = [1.0],
+                        default = [1000.0],
                         help='amount of gradient clipping')
     parser.add_argument('--load_model', type=str, action='store', nargs='+',
                         default = ['None'],

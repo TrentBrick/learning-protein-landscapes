@@ -67,7 +67,7 @@ def main(params):
     gen_model = DoubleWell(params=well_params)
 
     if params['MCMC'] == True:
-        nsteps = 10000
+        nsteps = 20000
         x0_left = np.array([[-1.8, 0.0]])
         x0_right = np.array([[1.8, 0.0]])
         sampler = MetropolisHastings(gen_model, x0=x0_left, noise=0.1, 
@@ -76,7 +76,7 @@ def main(params):
         data1 = sampler.run(nsteps)
 
         sampler = MetropolisHastings(gen_model, x0=x0_right, noise=0.1, 
-                             stride=5, mapper=None,
+                             stride=10, mapper=None,
                              is_discrete=False)
         data2 = sampler.run(nsteps)
 
@@ -193,9 +193,12 @@ def main(params):
         pickle.dump(ML_losses, open(experiment_dir+'ML_only_losses_dict.pickle','wb'))
 
     if params['KL_only']:
-        KL_losses = network.train_flexible(x, weight_ML=0.0, weight_entropy = params['Entropyweight'], epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
+        KL_losses = network.train_flexible(x, weight_ML=0.0, weight_entropy = params['Entropyweight'], 
+        epochs=params['KLepochs'], lr=params['lr'], 
+        batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
-        save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
+        save_partway_inter=params['save_partway_inter'], 
+        experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
     
         KL_losses = KL_losses['total_loss']
 
@@ -226,7 +229,7 @@ def main(params):
             plt.close()
    
         pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
-        
+
     plt.figure()
     fig, axes = plot_network(network, gen_model, data1, data2, x_ts, weight_cutoff=1e-2)
     fig.savefig(experiment_dir+'MLandKL_network_plot.png', dpi=100)
