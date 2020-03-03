@@ -49,7 +49,6 @@ def main(params):
     if params['random_seed'] == 0:
         params['random_seed'] = np.random.randint(1,100)
 
-
     # setting the random seeds
     torch.manual_seed(params['random_seed'])
     np.random.seed(params['random_seed'])
@@ -91,15 +90,19 @@ def main(params):
         enc_seqs.append(enc_seq) 
         oh.append(onehot(enc_seq,AA)) # this could be made much more efficient with tensorflow operations. 
     enc_seqs = np.asarray(enc_seqs)
-    oh=np.asarray(oh)
+    oh=np.asarray(oh) # of shape: [batch x L x AA]
     N = oh.shape[0] # batch size
     L = oh.shape[1] # length of the protein
-    # flattening the one hot
-    oh = oh.reshape(oh.shape[0], -1)
+    
     print('number and dimensions of the natural sequences', oh.shape)
 
     # loading in the environment class, used to score the evolutionary hamiltonians
-    gen_model = EVCouplingsGenerator(L, AA, h, J, device)
+    gen_model = EVCouplingsGenerator(L, AA, h, J, device, params['is_discrete'], gaussian_cov_noise = params['gaussian_cov_noise'])
+
+    # if the model is using a continous representation then need to encode the sequences here: 
+    if not params['is_discrete']:
+        print('onehot', oh.shape)
+        enc_seqs = gen_model.encode(torch.tensor(oh).float())
 
     # plotting the distribution of natural sequences used to train the model. 
     if params['protein_length'] >2: # As i know what 2 already looks like I dont want to see it. 
@@ -110,9 +113,9 @@ def main(params):
 
     if params['MCMC'] == True:
         nsteps = 3000
-        sampler = MetropolisHastings(gen_model, noise=5, 
+        sampler = MetropolisHastings(gen_model, noise=params['MCMC_samp_noise'], 
                              stride=5, mapper=None, 
-                             is_discrete=True, AA_num=AA)
+                             is_discrete=params['is_discrete'], AA_num=AA)
         #mapper=HardMaxMapper() but now I have discrete actions so dont need. 
         data = sampler.run(nsteps)
     else: 
@@ -121,13 +124,19 @@ def main(params):
         # need to have a train test split by sequence identity at some point
         # currently an even split between training and validation data. 
         rand_inds = np.random.choice(np.arange(N), params['tda'], replace=False)
+        # flattening the one hot
+        oh = oh.reshape(oh.shape[0], -1)
         data = oh[rand_inds, :] # flattened one hot sequences
         
+    if not params['is_discrete']:
+        # need to reshape the one hots
+        data = gen_model.encode(torch.tensor(data.reshape(data.shape[0], L, AA) ).float()).reshape((data.shape[0], -1))
     print('the size of all data to be used (train and val)', data.shape)
 
     # set to True by default, finds probability distribution for the most likely single mutation
     # made to every sequence
     if params['dequantize']:
+        assert params['is_discrete'] == True, 'should not dequantize if using continuous representation!'
         for_mut = data.reshape(data.shape[0], -1, AA).argmax(-1)
         for_mut = single_mut_profile(for_mut, h, J, AA) # samp seqs are now onehot. 
         for_mut = for_mut.reshape(for_mut.shape[0], -1)
@@ -142,14 +151,14 @@ def main(params):
         data = for_mut
 
     # make data a torch tensor
-    data = torch.from_numpy(data).float().to(device)
+    data = torch.tensor(data).float().to(device)
 
     # make train test split
     rand_inds = np.random.choice(np.arange(data.shape[0]), params['tda'], replace=False)
     train_set = rand_inds[: (params['tda']//2) ]
     test_set = rand_inds[ (params['tda']//2): ]
-    x = data[train_set, :]
-    xval = data[test_set, :]
+    x = data[train_set]
+    xval = data[test_set]
 
     print('shape of data used for training', x.shape)
 
@@ -160,10 +169,14 @@ def main(params):
         plt.hist(scores, bins=100)
         plt.gcf().savefig(experiment_dir+'Expectation_Sequences_'+name+'_Data_Hist.png', dpi=100)
         plt.close()
-
+            
         plt.figure()
-        oh = dset.reshape(dset.shape[0], -1, AA)
-        scores = gen_model.energy(oh.argmax(-1).cpu().detach().numpy())
+        if params['is_discrete']:
+            oh = dset.reshape(dset.shape[0], -1, AA)
+            oh = oh.argmax(-1).cpu().detach().numpy()
+        else: 
+            oh = dset
+        scores = gen_model.energy(oh, argmax=True)
         plt.hist(scores, bins=100)
         plt.gcf().savefig(experiment_dir+'ArgMax_Sequences_'+name+'_Data_Hist.png', dpi=100)
         plt.close()

@@ -17,7 +17,8 @@ class DoubleWell(object):
 
         # useful variables
         self.dim = self.params['dim']
-
+        self.AA_num = self.dim
+        self.is_discrete = False
 
     def energy(self, x):
         dimer_energy =self.params['a4'] * x[:, 0] ** 4 - self.params['a2'] * x[:, 0] ** 2 + self.params['a1'] * x[:, 0]
@@ -26,7 +27,7 @@ class DoubleWell(object):
             oscillator_energy = (self.params['k'] / 2.0) * x[:, 1] ** 2
         if self.dim > 2:
             oscillator_energy = np.sum((self.params['k'] / 2.0) * x[:, 1:] ** 2, axis=1)
-        return  dimer_energy + oscillator_energy
+        return  -(dimer_energy + oscillator_energy)
 
     def energy_torch(self, x):
         dimer_energy =self.params['a4'] * x[:, 0] ** 4 - self.params['a2'] * x[:, 0] ** 2 + self.params['a1'] * x[:, 0]
@@ -35,7 +36,7 @@ class DoubleWell(object):
             oscillator_energy = (self.params['k'] / 2.0) * x[:, 1] ** 2
         if self.dim > 2:
             oscillator_energy = torch.sum((self.params['k'] / 2.0) * x[:, 1:] ** 2, dim=1)
-        return  dimer_energy + oscillator_energy
+        return  -(dimer_energy + oscillator_energy).unsqueeze(1)
 
     def plot_dimer_energy(self, axis=None, temperature=1.0):
         """ Plots the dimer energy to the standard figure """
@@ -44,7 +45,8 @@ class DoubleWell(object):
             X = x_grid[:, None]
         else:
             X = np.hstack([x_grid[:, None], np.zeros((x_grid.size, self.dim - 1))])
-        energies = self.energy(X) / temperature
+        # flipping the energy
+        energies = - (self.energy(X) / temperature)
 
         import matplotlib.pyplot as plt
         if axis is None:

@@ -318,17 +318,33 @@ class NormalizingFlowModel(nn.Module):
         z = np.sqrt(temperature) * self.prior.sample((num_samples,))
         xs, _ = self.flow.backward(z)
         return xs
+
+    def sample_log_w(self, num_samples=10000, temperature=1.0):
+        with torch.no_grad():
+            z = np.sqrt(temperature) * self.prior.sample((num_samples,))
+            xs, log_det = self.flow.backward(z)
+            #print('the z I cant sum', z, type(z))
+            z = z.numpy()
+            # important that this is the probability p(z) without its exponent. 
+            energy_z = self.energy_model.dim * np.log(np.sqrt(temperature)) + np.sum( (z**2 / (2*temperature) ), axis=1) 
+            # reversing this here for energy maximization. 
+            energy_x = - ( self.energy_model.energy(xs.numpy()) / temperature )
+            logw = -energy_x + energy_z + log_det.numpy()
+        return xs.numpy(), logw
     
     def sample_energy(self, num_samples=5000, temperature=1.0):
         sample_x = self.sample(num_samples=num_samples, temperature=temperature ).cpu().detach().numpy()
         exp_energy_x = self.energy_model.energy(sample_x) / temperature
         # want to arg max these sequences. Using numpy commands as .energy is in numpy rather than tensorflow. 
-        h_max = np.reshape(sample_x, (num_samples, self.energy_model.L, self.energy_model.AA_num ))
-        h_max = np.argmax(h_max, axis=-1)
-        h_max = np.reshape(h_max, (num_samples, self.energy_model.L ) )
-        # fed into energy as integers where they are then turned into onehots. 
-        #print('hard max is', h_max.shape)
-        hard_energy_x = self.energy_model.energy(h_max) / temperature 
+        if self.energy_model.is_discrete: 
+            h_max = np.reshape(sample_x, (num_samples, self.energy_model.L, self.energy_model.AA_num ))
+            h_max = np.argmax(h_max, axis=-1)
+            h_max = np.reshape(h_max, (num_samples, self.energy_model.L ) )
+            # fed into energy as integers where they are then turned into onehots. 
+            #print('hard max is', h_max.shape)
+            hard_energy_x = self.energy_model.energy(h_max) / temperature 
+        else: 
+            hard_energy_x = self.energy_model.energy(sample_x, argmax=True) / temperature
         return exp_energy_x, hard_energy_x # dont want to return any of the other types of energy right now. 
 
     def train_flexible(self, x, xval=None, optimizer=None, lr=0.001, epochs=2000, 
@@ -369,6 +385,7 @@ class NormalizingFlowModel(nn.Module):
                 rand_inds = np.random.choice(np.arange(len(x)), batch_size) # replace is True
                 data = x[rand_inds]
 
+                print('into ML is', data.shape)
                 # forward and reverse are actually the other way around here. 
                 zs, prior_logprob, forward_log_det = self.forward( data )
         
@@ -391,10 +408,7 @@ class NormalizingFlowModel(nn.Module):
                     temperature_factors=temperature, explore=explore, 
                     entropy_weight=entropy_weight)
 
-                loss_KL = loss_KL*weight_KL
-                #print('loss_KL', loss_KL.shape)
-                #print('pre KL total loss', total_loss.shape)
-                total_loss += loss_KL
+                total_loss += loss_KL*weight_KL
 
             #print('total loss before the sum', total_loss)
             #print(total_loss.shape)
@@ -483,15 +497,17 @@ class NormalizingFlowModel(nn.Module):
         return -y
 
     def KL_loss(self, x, log_det, high_energy=-1, 
-    max_energy=-4, temperature_factors=1.0, explore=1.0, entropy_weight=1.0):
+    max_energy=-4, temperature_factors=1.0, explore=1.0, entropy_weight=0.0):
         # explore is responsible for how large the log determinant should be. 
         batch_size = x.shape[0]
+        #print('KL batch shape', x.shape)
 
-        x_sm = self.softmaxer(x, batch_size) # returns batchsize x protein length x # AAs
-        #reshaping so that its flat again
-        x_sm_flat = x_sm.view((batch_size, -1))
+        if self.energy_model.is_discrete:
+            x_sm = self.softmaxer(x, batch_size) # returns batchsize x protein length x # AAs
+            #reshaping so that each of the one hots is flat again batchsize x (protein length * # AAs)
+            x = x_sm.view((batch_size, -1))
 
-        E = self.energy_model.discrete_energy_torch(x_sm_flat)
+        E = self.energy_model.energy_torch(x)
         #E = self.energy_model.discrete_energy_tf(x, b)
         #print('these are the energy rewards', E.shape)
 
@@ -500,11 +516,15 @@ class NormalizingFlowModel(nn.Module):
 
         #print('log det', log_det.shape)
         
-        ent_loss = (entropy_weight * self.entropy_seq(x_sm)).float() # getting the entropy of the sequences
+        if entropy_weight > 0.0:
+            ent_loss = (entropy_weight * self.entropy_seq(x_sm)).float() # getting the entropy of the sequences
+        else: 
+            ent_loss = torch.zeros((1,1))
         #print( "sequence entropies", ent_loss.shape)
 
         ld_loss = (explore * log_det).float().unsqueeze(1)
-        #print('ld_loss', ld_loss.shape)
+        #print('ld_loss', ld_loss.shape, 'ent loss', ent_loss.shape, 'E loss', E.shape)
+
         loss = - E - ld_loss + ent_loss #tf.zeros((batch_size, 1), dtype=tf.float32)#
         #print('kl loss', loss)
         #print('kl loss shape', loss.shape)

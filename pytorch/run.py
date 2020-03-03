@@ -26,6 +26,12 @@ def initialize_parameters():
     parser.add_argument('--run_model', type=str, action='store', nargs='+', 
                         default=['evCouplings.py'],
                         help='select the model run script to use for training. Currently only EV Couplings. ')
+    parser.add_argument('--is_discrete', type=buildBool, action='store', nargs='+', 
+                        default=[False],
+                        help='Need to state if want to use the discrete version of the model or not.')
+    parser.add_argument('--gaussian_cov_noise', type=float, action='store', nargs='+', 
+                        default=[5.0],
+                        help='How wide the Gaussians are between each sequence.')
     parser.add_argument('--protein_length', type=int, action='store', nargs='+',
                         default = [2],
                         help='Can trim the size of the protein loaded in for \
@@ -97,6 +103,10 @@ def initialize_parameters():
     parser.add_argument('--MCMC', type=buildBool, action='store', nargs='+',
                         default = [True],
                         help='Training data using MCMC rather than natural sequences')
+    parser.add_argument('--MCMC_samp_noise', type=float, action='store', nargs='+',
+                        default = [10.0],
+                        help='Training data using MCMC rather than natural sequences')
+    
     parser.add_argument('--block_mask', type=buildBool, action='store', nargs='+',
                         default = [True],
                         help='Use a block rather than an even odd masking for Bipartite models.')
