@@ -6,14 +6,11 @@ if platform.system() == 'Darwin':
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import torch
-import datetime
+from datetime import datetime
 
 import time
 import pickle
 import os
-
-#from IPython.display import SVG
-#from keras.utils.vis_utils import model_to_dot
 
 import seaborn as sns
 import matplotlib.pylab as plt
@@ -52,7 +49,7 @@ def main(params):
     np.random.seed(params['random_seed'])
 
     # Creating new directory to save all run outputs in
-    date_time = 'lolzzz' #str(datetime.now()).replace(' ', '_').replace(':', '_') # ensures there aren't any issues saving this as a file name. 
+    date_time = str(datetime.now()).replace(' ', '_').replace(':', '_') # ensures there aren't any issues saving this as a file name. 
     experiment_name = params['exp_base_name']+"_rand_seed-%s_ML_epochs-%s_KL_epochs-%s_learning_rate-%s_MLweight-%s_KLweight-%s_explore%s_temperature-%s_s_time-%s" % (
         params['random_seed'], params['MLepochs'], params['KLepochs'], 
         params['lr'], params['MLweight'], params['KLweight'], 
@@ -196,7 +193,7 @@ def main(params):
         pickle.dump(ML_losses, open(experiment_dir+'ML_only_losses_dict.pickle','wb'))
 
     if params['KL_only']:
-        KL_losses = network.train_flexible(x, weight_ML=0.0, epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
+        KL_losses = network.train_flexible(x, weight_ML=0.0, weight_entropy = params['Entropyweight'], epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
         save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
     
@@ -218,7 +215,7 @@ def main(params):
                                                             weight_ML=params['MLweight'], weight_KL=params['KLweight'],
                                                             temperature=params['temperature'], explore=params['explore'], verbose=params['verbose'],
                                                             save_partway_inter=params['save_partway_inter'], clipnorm=params['gradient_clip'],
-                                                            experiment_dir=experiment_dir, entropy_weight = params['Entropyweight'])
+                                                            experiment_dir=experiment_dir, weight_entropy = params['Entropyweight'])
 
         for loss_to_plot in ['total_loss', 'ld_loss', 'kl_loss', 'ml_loss']:
 
@@ -228,10 +225,8 @@ def main(params):
             plt.gcf().savefig(experiment_dir+'Post_KL_'+loss_to_plot+'_LossCurve.png', dpi=100)
             plt.close()
    
-    pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
-
-    #exp_energy_x, hard_energy_x = network.sample_energy(num_samples=5000, temperature=params['temperature'])
-
+        pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
+        
     plt.figure()
     fig, axes = plot_network(network, gen_model, data1, data2, x_ts, weight_cutoff=1e-2)
     fig.savefig(experiment_dir+'MLandKL_network_plot.png', dpi=100)

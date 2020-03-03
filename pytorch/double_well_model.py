@@ -20,7 +20,7 @@ class DoubleWell(object):
         self.AA_num = self.dim
         self.is_discrete = False
 
-    def energy(self, x):
+    def energy(self, x, argmax=False):
         dimer_energy =self.params['a4'] * x[:, 0] ** 4 - self.params['a2'] * x[:, 0] ** 2 + self.params['a1'] * x[:, 0]
         oscillator_energy = 0.0
         if self.dim == 2:

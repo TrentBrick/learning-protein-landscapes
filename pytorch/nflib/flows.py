@@ -277,23 +277,17 @@ class NormalizingFlow(nn.Module):
     def forward(self, x):
         m, _ = x.shape
         log_det = torch.zeros(m)
-        #zs = [x]
         for flow in self.flows:
             x, ld = flow.forward(x)
-            #temp = flow.forward(x)
-            #print(temp)
             log_det += ld
-            #zs.append(x)
         return x, log_det
 
     def backward(self, z):
         m, _ = z.shape
         log_det = torch.zeros(m)
-        #xs = [z]
         for flow in self.flows[::-1]:
             z, ld = flow.backward(z)
             log_det += ld
-            #xs.append(z)
         return z, log_det
 
 class NormalizingFlowModel(nn.Module):
@@ -305,14 +299,16 @@ class NormalizingFlowModel(nn.Module):
         self.flow = NormalizingFlow(flows)
         self.energy_model = energy_model
     
-    def forward(self, x):
+    def forward(self, x, std=1.0):
         zs, log_det = self.flow.forward(x)
-        prior_logprob = self.prior.log_prob(zs).view(x.size(0), -1).sum(1)
+        # TODO: account for other kinds of distribuitions and give std as an input
+        prior_logprob = - (0.5 / (std**2)) * (zs**2).sum(dim=1) 
         return zs, prior_logprob, log_det
 
     def backward(self, z):
+        prior_logprob = self.prior.log_prob(z).view(z.size(0), -1).sum(1)
         xs, log_det = self.flow.backward(z)
-        return xs, log_det
+        return xs, prior_logprob, log_det
     
     def sample(self, num_samples=10000, temperature=1.0):
         z = np.sqrt(temperature) * self.prior.sample((num_samples,))
@@ -350,7 +346,7 @@ class NormalizingFlowModel(nn.Module):
     def train_flexible(self, x, xval=None, optimizer=None, lr=0.001, epochs=2000, 
                        batch_size=1024, verbose=1, clipnorm=None,
                        high_energy=100, max_energy=1e10, std=1.0, reg_Jxz=0.0,
-                       weight_ML=1.0, weight_KL=1.0, entropy_weight = 1.0, 
+                       weight_ML=1.0, weight_KL=1.0, weight_entropy = 0.0, 
                        temperature=1.0, explore=1.0,
                        save_partway_inter=None,
                        experiment_dir='DidNotPutInAName'):
@@ -375,7 +371,6 @@ class NormalizingFlowModel(nn.Module):
         for e in range(epochs): 
 
             optimizer.zero_grad()
-
             total_loss = torch.zeros(batch_size,1)
 
             if weight_ML > 0.0:
@@ -385,28 +380,24 @@ class NormalizingFlowModel(nn.Module):
                 rand_inds = np.random.choice(np.arange(len(x)), batch_size) # replace is True
                 data = x[rand_inds]
 
-                print('into ML is', data.shape)
-                # forward and reverse are actually the other way around here. 
+                # forward is from the data to the latent. 
                 zs, prior_logprob, forward_log_det = self.forward( data )
         
-                forward_logprob = prior_logprob + forward_log_det
-                #print('forw log prob', forward_logprob.shape)
-                #loss_ML = weight_ML*self.ML_loss(zs, forward_logprob, std=std).unsqueeze(1) # this should be of dim: batch x 1
+                forward_logprob = forward_log_det + prior_logprob
                 loss_ML = - weight_ML*forward_logprob.unsqueeze(1)
-                #print('dim of loss_ml', loss_ML.shape)
-                #print('loss ml', loss_ML)
                 total_loss += loss_ML
 
             if weight_KL > 0.0:
 
                 # sample Z values
                 latents = self.sample(batch_size)
-                xs, backward_log_det = self.backward(latents)
+                xs, z_logprob, backward_log_det = self.backward(latents)
+                #backward_logprob = prior_logprob+backward_log_det
 
                 # ld_loss and ent_loss are only for reporting. they are combined into the KL_loss. 
                 loss_KL, ld_loss, ent_loss = self.KL_loss(xs, backward_log_det, 
                     temperature_factors=temperature, explore=explore, 
-                    entropy_weight=entropy_weight)
+                    weight_entropy=weight_entropy)
 
                 total_loss += loss_KL*weight_KL
 
@@ -497,7 +488,7 @@ class NormalizingFlowModel(nn.Module):
         return -y
 
     def KL_loss(self, x, log_det, high_energy=-1, 
-    max_energy=-4, temperature_factors=1.0, explore=1.0, entropy_weight=0.0):
+    max_energy=-4, temperature_factors=1.0, explore=1.0, weight_entropy=0.0):
         # explore is responsible for how large the log determinant should be. 
         batch_size = x.shape[0]
         #print('KL batch shape', x.shape)
@@ -508,24 +499,17 @@ class NormalizingFlowModel(nn.Module):
             x = x_sm.view((batch_size, -1))
 
         E = self.energy_model.energy_torch(x)
-        #E = self.energy_model.discrete_energy_tf(x, b)
-        #print('these are the energy rewards', E.shape)
 
         # energy clipping for unstable training. 
         #E = self.linlogcut(E, high_energy, max_energy)
-
         #print('log det', log_det.shape)
-        
-        if entropy_weight > 0.0:
-            ent_loss = (entropy_weight * self.entropy_seq(x_sm)).float() # getting the entropy of the sequences
+        if weight_entropy > 0.0:
+            ent_loss = (weight_entropy * self.entropy_seq(x_sm)).float() # getting the entropy of the sequences
         else: 
             ent_loss = torch.zeros((1,1))
         #print( "sequence entropies", ent_loss.shape)
 
         ld_loss = (explore * log_det).float().unsqueeze(1)
         #print('ld_loss', ld_loss.shape, 'ent loss', ent_loss.shape, 'E loss', E.shape)
-
-        loss = - E - ld_loss + ent_loss #tf.zeros((batch_size, 1), dtype=tf.float32)#
-        #print('kl loss', loss)
-        #print('kl loss shape', loss.shape)
-        return loss.float(), -ld_loss.sum(), ent_loss.sum()  #  SHOULD THIS BE SUMMED UP OR DIVIDED BY BATCHSIZE? DOES KERAS TAKE THE MEAN? 
+        loss = - E - ld_loss + ent_loss 
+        return loss, -ld_loss.sum(), ent_loss.sum()

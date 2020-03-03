@@ -115,7 +115,7 @@ def main(params):
         nsteps = 3000
         sampler = MetropolisHastings(gen_model, noise=params['MCMC_samp_noise'], 
                              stride=5, mapper=None, 
-                             is_discrete=params['is_discrete'], AA_num=AA)
+                             is_discrete=True, AA_num=AA)
         #mapper=HardMaxMapper() but now I have discrete actions so dont need. 
         data = sampler.run(nsteps)
     else: 
@@ -265,7 +265,7 @@ def main(params):
         pickle.dump(ML_losses, open(experiment_dir+'ML_only_losses_dict.pickle','wb'))
 
     if params['KL_only']:
-        KL_losses = network.train_flexible(x, weight_ML=0.0, epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
+        KL_losses = network.train_flexible(x, weight_ML=0.0, weight_entropy = params['Entropyweight'], epochs=params['KLepochs'], lr=params['lr'], batch_size=params['KLbatch'], temperature=params['temperature'], 
         explore=params['explore'], verbose=params['verbose'],
         save_partway_inter=params['save_partway_inter'], experiment_dir=experiment_dir, clipnorm=params['gradient_clip'])
     
@@ -284,10 +284,10 @@ def main(params):
 
     else: 
         ML_KL_losses = network.train_flexible(x, xval=xval, lr=params['lr'], std=params['latent_std'], epochs=params['KLepochs'], batch_size=params['KLbatch'], 
-                                                            weight_ML=params['MLweight'], weight_KL=params['KLweight'],
+                                                            weight_ML=params['MLweight'], weight_KL=params['KLweight'], weight_entropy = params['Entropyweight'],
                                                             temperature=params['temperature'], explore=params['explore'], verbose=params['verbose'],
                                                             save_partway_inter=params['save_partway_inter'], clipnorm=params['gradient_clip'],
-                                                            experiment_dir=experiment_dir, entropy_weight = params['Entropyweight'])
+                                                            experiment_dir=experiment_dir)
 
         for loss_to_plot in ['total_loss', 'ld_loss', 'kl_loss', 'ml_loss']:
 
@@ -297,10 +297,11 @@ def main(params):
             plt.gcf().savefig(experiment_dir+'Post_KL_'+loss_to_plot+'_LossCurve.png', dpi=100)
             plt.close()
    
-    torch.save(network.flow.state_dict(), experiment_dir+'Model_Post_ML_KL_Training.torch')
-    pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
+        pickle.dump(ML_KL_losses, open(experiment_dir+'ML_KL_losses_dict.pickle','wb'))
 
-    exp_energy_x, hard_energy_x = network.sample_energy(num_samples=5000, temperature=params['temperature'])
+    torch.save(network.flow.state_dict(), experiment_dir+'Model_Post_ML_KL_Training.torch')
+    
+    exp_energy_x, hard_energy_x = network.sample_energy(num_samples=10000, temperature=params['temperature'])
 
     plt.figure()
     plt.hist(exp_energy_x, bins=100)
