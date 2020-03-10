@@ -316,11 +316,11 @@ def plot_network(network, gen_model, traj_left, traj_right, x_ts,
 
 def test_sample(network, temperature=1.0, nsample=100000, plot=True):
     if nsample <= 100000:
-        sample_x = network.sample(temperature=temperature, num_samples=nsample)
+        sample_x = network.sample_xs(temperature=temperature, num_samples=nsample)
     else:
         sample_x = []
         for i in range(int(nsample/100000)):
-            sample_x = network.sample(temperature=temperature, num_samples=nsample)
+            sample_x = network.sample_xs(temperature=temperature, num_samples=nsample)
             sample_x.append(sample_x)
         sample_x = np.vstack(sample_x)
     sample_x = sample_x.detach().numpy()

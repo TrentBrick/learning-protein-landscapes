@@ -25,6 +25,7 @@ def create_gmix(points, covs, props):
     for i in range(len(points)):
         centers[i, :], sigs[i, :, :], Zs[i] = create_gauss(points[i,:], covs[i,:,:])
     Zs = Zs*props # weighting the constants by the proportion. 
+    centers = center_and_scale(centers)
     return centers, sigs, Zs
 
 #############################################
@@ -32,6 +33,7 @@ def create_gmix(points, covs, props):
 def center_and_scale(x):
     '''adjusts and scales values to [-1,1]'''
     #TODO: try and have a CDF for the different properties rather than a norm scaling. 
+    # but can I a
     x_n = x - x.min()
     x_n = x_n / x_n.max()
     x_n = x_n*2 - 1
@@ -41,6 +43,9 @@ def center_and_scale(x):
 def aa_to_seq_encoder(aa_prop, features, aa_order='ACDEFGHIKLNMPQRSTVWY'):
     '''the decoder works by creating a dictionary that products w one-hots, given seq [L x a]'''
     aa_features = aa_prop.set_index('aa').loc[list(aa_order), features].values
+    # normalizing. Should write additional functions to normalize by!
+    for c in range(aa_features.shape[1]):
+        aa_features[:,c] = center_and_scale(aa_features[:,c])
     feat_map = torch.Tensor(aa_features)
     print('shape of feature map', feat_map.shape)
     return lambda seqs: (feat_map.T@seqs.transpose(1,2)).permute(0,2,1)

@@ -305,12 +305,12 @@ def main(params):
 
     plt.figure()
     plt.hist(exp_energy_x, bins=100)
-    plt.gcf().savefig(experiment_dir+'Post_KL_Expectation_GeneratedEnergies.png', dpi=100)
+    plt.gcf().savefig(experiment_dir+'Post_ML_KL_Expectation_GeneratedEnergies.png', dpi=100)
     plt.close()
 
     plt.figure()
     plt.hist(hard_energy_x, bins=100)
-    plt.gcf().savefig(experiment_dir+'Post_KL_ArgMax_GeneratedEnergies.png', dpi=100)
+    plt.gcf().savefig(experiment_dir+'Post_ML_KL_ArgMax_GeneratedEnergies.png', dpi=100)
     plt.close()
 
     total_time = time.time() - start_time

@@ -378,7 +378,7 @@ class NormalizingFlowModel(nn.Module):
                 #TODO: Develop a dataloader to make this faster
                 rand_inds = np.random.choice(np.arange(len(x)), batch_size) # replace is True
                 data = x[rand_inds]
-
+                print('data is', data.shape)
                 # forward is from the data to the latent. 
                 zs, prior_logprob, forward_log_det = self.forward( data )
         

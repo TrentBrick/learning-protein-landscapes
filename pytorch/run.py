@@ -50,10 +50,10 @@ def initialize_parameters():
                         help='training data amount. Will assert that it is less than the total amount of data. \
                             Currently also splits this equally and randomly into train and test')            
     parser.add_argument('--MLbatch', type=int, action='store', nargs='+',
-                        default = [5120],
+                        default = [128],
                         help='Batchsize for ML')
     parser.add_argument('--KLbatch', type=int, action='store', nargs='+',
-                        default = [10240],
+                        default = [1024],
                         help='Batchsize for KL. This is the number of samples for both ML and KL here.')
     parser.add_argument('--temperature', type=float, action='store', nargs='+',
                         default = [1.0],
@@ -106,7 +106,6 @@ def initialize_parameters():
     parser.add_argument('--MCMC_samp_noise', type=float, action='store', nargs='+',
                         default = [10.0],
                         help='Training data using MCMC rather than natural sequences')
-    
     parser.add_argument('--block_mask', type=buildBool, action='store', nargs='+',
                         default = [False],
                         help='Use a block rather than an even odd masking for Bipartite models.')
