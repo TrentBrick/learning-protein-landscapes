@@ -86,13 +86,16 @@ class EVCouplingsGenerator(object):
         return np.exp(inp)/np.sum(np.exp(inp), axis=axis, keepdims=True)
 
     @staticmethod
-    @njit(fastmath=True)
-    def _numba_energy(inp, h, J):
-        return ((inp.T*(J@inp.T))/2 ).T.sum(1) + inp@h
+    #@njit(fastmath=True)
+    def _numba_energy(inp, h, J, full_batch):
+        if full_batch: 
+            return ((inp * np.einsum('ij,bnj->bni',J,inp ))/2).sum(-1)+inp@h
+        else: 
+            return ((inp.T*(J@inp.T))/2 ).T.sum(1) + inp@h
 
     # optimized because we know it is flattened one hots coming in. 
-    def hill_energy(self, inp):
-        return self._numba_energy(inp.astype(np.float32), self.h, self.J)
+    def hill_energy(self, inp, full_batch=False):
+        return self._numba_energy(inp.astype(np.float32), self.h, self.J, full_batch).astype(np.float)
 
     def energy(self, inp, argmax=False, discrete_override = False):
         """

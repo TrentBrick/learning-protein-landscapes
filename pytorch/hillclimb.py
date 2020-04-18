@@ -9,7 +9,7 @@ from numba import int32, float32
 class HillClimbing(object):
 
     def __init__(self, model, experiment_dir, x0=None, nwalkers=1, 
-        AA_num=20, print_every=10, save_trajectory=False):
+        print_every=10, save_trajectory=False):
         """ ''' Uses discrete hillclimbing from a starting position. 
         Implemented to use batch scoring of the PFP and able to run multiple chains.  '''
 
@@ -28,12 +28,13 @@ class HillClimbing(object):
         """
         self.model = model
         self.nwalkers = nwalkers
-        self.AA_num = AA_num
+        self.AA_num = self.model.AA_num
+        self.L = self.model.L
         self.experiment_dir = experiment_dir
         self.save_trajectory = save_trajectory
         
         if x0 is None: 
-            x0 = self.make_rand_starters(self.nwalkers)
+            x0 = self.make_rand_starters(self.nwalkers, self.AA_num, self.L)
             self.x = x0
         else: 
             print('NB!')
@@ -47,52 +48,56 @@ class HillClimbing(object):
         self.total_num_steps = 0 #useful if want to run more steps across multiple run() calls
         self.print_every = print_every
 
-    def make_rand_starters(self, batch_size, AA_num, L):
-        I = np.eye(AA_num)
-        res = np.zeros( (batch_size, L*AA_num)) 
+    @staticmethod
+    @njit(fastmath=True)
+    def make_rand_starters(batch_size, AA_num, L):
+        I = np.eye( AA_num)
+        res = np.zeros( (batch_size,  L* AA_num)) 
         for i in range(L):
-            start = i*self.AA_num
-            res[:,start:(start+self.AA_num)] = I[np.random.randint(0,self.AA_num,batch_size),:]
+            start = i* AA_num
+            res[:,start:(start+ AA_num)] = I[np.random.randint(0, AA_num,batch_size),:]
         return res
         
+    @staticmethod
     #@njit(fastmath=True)
-    def _hill_step(self):
-        # propose all possible mutations to each sequence, select the best one. 
-        for i in range(self.nwalkers):
-            all_muts = self._all_mutations(self.x[i,:])
-            self.x[i,:] = self._pick_best(all_muts, self.x[i,:], self.E[i], i)
-
-    #@njit(fastmath=True)
-    def _all_mutations(self, seq):
+    def _all_mutations(seqs, AA_num, L):
         # performs all mutations possible to a single sequence inputted as a numpy array
-        all_muts = np.tile(seq, (self.AA_num*self.model.L,1))
-        I = np.eye(self.AA_num)
+        #all_muts =  np.tile(seq, (AA_num*L,1)) #np.ones((AA_num*L,AA_num*L)) * seq
+        
+        # batch mutations of all. 
+        all_muts = np.tile(np.expand_dims(seqs,1), (1, AA_num*L,1))
+        #all_muts = np.ones((AA_num*L,AA_num*L)) * np.expand_dim(seqs,1)
+        I = np.eye(AA_num)
 
-        for i in range(self.model.L):
-            start = i*self.AA_num
-            end = start+self.AA_num
-            all_muts[start:end, start:end ] = I 
+        for i in range(L):
+            start = i*AA_num
+            end = start+AA_num
+            all_muts[:, start:end, start:end ] = I 
 
         return all_muts
 
-    #@njit(fastmath=True)
-    def _pick_best(self, all_muts, seq, seq_energy, seq_ind):
+    def _hill_step(self):
+        # propose all possible mutations to each sequence, select the best one. 
+        # (nwalker x AA*L x AA*L) each sequence, then all possible mutations of it
+        self._pick_best( self._all_mutations(self.x, self.AA_num, self.L) )
+
+    def _pick_best(self, all_muts):
         # score all of the sequences and pick the best one
         # if there are no better sequences we are at a local maxima and this sequence
         # should be recorded before restarting the search!
-        E = self.model.hill_energy(all_muts)
-        ind = np.argmax(E)
-        if seq_energy == E[ind]: 
-            # at a local max. Store this sequence and its energy!
-            self.local_maxes.append( (seq, seq_energy, self.total_num_steps) )
-            #reset this walker by returning a single new random sequence. 
-            new_rand_seq = self.make_rand_starters(1)
-            self.E[seq_ind] = self.model.hill_energy(np.expand_dims(new_rand_seq,0))
-            return new_rand_seq
-        else: 
-            # return the highest scoring new sequence
-            self.E[seq_ind] = E[ind]
-            return all_muts[ind]
+        E = self.model.hill_energy(all_muts, full_batch=True)
+        max_inds = np.argmax(E, -1)
+        for i in range(self.nwalkers):
+            max_ind = max_inds[i]
+            if self.E[i] == E[i, max_ind]:
+                self.local_maxes.append( (self.x[i,:], self.E[i], self.total_num_steps) )
+
+                new_rand_seq = self.make_rand_starters(1, self.AA_num, self.L)
+                self.E[i] = self.model.hill_energy(new_rand_seq)
+                self.x[i,:] = new_rand_seq
+            else: 
+                self.E[i] = E[i, max_ind]
+                self.x[i,:] = all_muts[i, max_ind, :]
 
     def convert_to_position_ints(self):
         temp = []
@@ -114,7 +119,7 @@ class HillClimbing(object):
             if self.save_trajectory: 
                 # save out the current sequences and energies that that the whole trajectory can later be plotted.
                 np.savetxt( open(self.experiment_dir+'hill_climb_trajectories_seqs.txt', 'a'), self.convert_to_position_ints())
-                np.savetxt( open(self.experiment_dir+'hill_climb_trajectories_energies.txt', 'a'), self.E)
+                np.savetxt( open(self.experiment_dir+'hill_climb_trajectories_energies.txt', 'a'), np.round_(self.E, decimals=))
 
             self.total_num_steps += 1
             

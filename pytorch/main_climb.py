@@ -11,7 +11,7 @@ if __name__=='__main__':
 
     start_time = time.time()
 
-    params = {'protein_length':154, 'is_discrete':True, 
+    params = {'protein_length':6, 'is_discrete':True, 
     'gaussian_cov_noise':None, 'nwalkers':64, 'print_every':50,
     'experiment_name':'protein_lengthFull_FullInt_K_steps', 
     'save_trajectory':True}
@@ -61,7 +61,7 @@ if __name__=='__main__':
         nwalkers=params['nwalkers'], print_every=params['print_every'],
         save_trajectory=params['save_trajectory'])
 
-    local_maxes = hill_climber.run(10)
+    local_maxes = hill_climber.run(1000)
     pickle.dump(local_maxes, open(hill_climber.experiment_dir+'local_maxes_and_energies.pickle', 'wb'))
 
     print('Total run time in minutes: '+str((time.time()-start_time)/60))
