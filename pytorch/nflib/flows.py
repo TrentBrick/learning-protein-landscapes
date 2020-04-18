@@ -305,9 +305,9 @@ class NormalizingFlowModel(nn.Module):
         return zs, prior_logprob, log_det
 
     def backward(self, z):
-        prior_logprob = self.prior.log_prob(z).view(z.size(0), -1).sum(1)
+        #prior_logprob = self.prior.log_prob(z).view(z.size[0], -1).sum(1)
         xs, log_det = self.flow.backward(z)
-        return xs, prior_logprob, log_det
+        return xs, log_det
     
     def sample_xs(self, num_samples=10000, temperature=1.0):
         z = np.sqrt(temperature) * self.prior.sample((num_samples,))
@@ -390,7 +390,7 @@ class NormalizingFlowModel(nn.Module):
 
                 # sample Z values
                 latents = np.sqrt(temperature) * self.prior.sample((batch_size,))
-                xs, z_logprob, backward_log_det = self.backward(latents)
+                xs, backward_log_det = self.backward(latents)
                 #backward_logprob = prior_logprob+backward_log_det
 
                 # ld_loss and ent_loss are only for reporting. they are combined into the KL_loss. 
@@ -512,4 +512,4 @@ class NormalizingFlowModel(nn.Module):
         #print('ld_loss', -ld_loss.mean().item(), 'E loss', -E.mean().item())
         loss = - E - ld_loss + ent_loss 
         #print('total loss', loss.mean().item())
-        return loss, -ld_loss.sum(), ent_loss.sum()
+        return loss, ld_loss.sum(), ent_loss.sum()

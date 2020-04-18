@@ -10,6 +10,8 @@
 hostname
 pwd
 module load gcc/6.2.0 cuda/9.0
-srun stdbuf -oL -eL ~/anaconda3/bin/python run.py evCouplings.py NVP_GPU_Train \
- --epochsML 1000 --epochsKL 2000 --batchsize_KL 256 --batchsize_ML 64 --ML_weight 1.0 \
- --lr 0.000001  --model_architecture RRRRRRRRRRR --save_partway_inter 0.1
+srun stdbuf -oL -eL ~/anaconda3/bin/python run.py --tda 10000 \
+--protein_length 0 --model_type neuralSpline --is_discrete False \
+--gaussian_cov_noise 1.0 10.0 --exp_base_name Cont_Full_Len_GPU \
+--MLepochs 600 --KLepochs 1000 --MLbatch 256 --KLbatch 1024 --KLweight 0.5 1.0 \
+--random_seed 27 28 29 --save_partway_inter 0.2

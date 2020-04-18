@@ -129,7 +129,7 @@ def main(params):
         data = oh[rand_inds, :] # flattened one hot sequences
         
     if not params['is_discrete']:
-        # need to reshape the one hots
+        # need to encode all of the data in a continuous representation for the training. 
         data = gen_model.encode(torch.tensor(data.reshape(data.shape[0], L, AA) ).float()).reshape((data.shape[0], -1))
     print('the size of all data to be used (train and val)', data.shape)
 

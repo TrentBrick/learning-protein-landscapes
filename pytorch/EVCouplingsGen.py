@@ -5,6 +5,8 @@ import torch
 from scipy.special import softmax
 from torch.autograd import Variable
 from EVCouplingsStuff.continuousUtils import initialize_continous_aa
+from numba import njit, prange
+
 class EVCouplingsGenerator(object):
 
     def __init__(self, protein_length, aa_num, h ,J, device, 
@@ -20,8 +22,8 @@ class EVCouplingsGenerator(object):
         J_numpy = J_numpy.reshape(self.AA_num*self.L, self.AA_num*self.L)
         h = h.reshape(-1)
 
-        self.h = h # numpy versions of the hamiltonian energy weights. 
-        self.J =J_numpy
+        self.h = h.astype(np.float32) # numpy versions of the hamiltonian energy weights. 
+        self.J =J_numpy.astype(np.float32)
         self.h_torch = torch.unsqueeze(Variable(torch.from_numpy(h), requires_grad=False), 1).to(device)  
         J_torch = Variable(torch.from_numpy(J_numpy), requires_grad=False)
         self.J_torch = J_torch.float().to(device)
@@ -78,8 +80,21 @@ class EVCouplingsGenerator(object):
         evh = j_val + h_val
         return evh
 
+    @staticmethod
+    @njit(fastmath=True)
+    def softmax(inp ,axis=1):
+        return np.exp(inp)/np.sum(np.exp(inp), axis=axis, keepdims=True)
 
-    def energy(self, inp, argmax=False):
+    @staticmethod
+    @njit(fastmath=True)
+    def _numba_energy(inp, h, J):
+        return ((inp.T*(J@inp.T))/2 ).T.sum(1) + inp@h
+
+    # optimized because we know it is flattened one hots coming in. 
+    def hill_energy(self, inp):
+        return self._numba_energy(inp.astype(np.float32), self.h, self.J)
+
+    def energy(self, inp, argmax=False, discrete_override = False):
         """
         Calculates the Hamiltonian of the global probability distribution P(A_1, ..., A_L)
         for a given sequence A_1,...,A_L from J_ij and h_i parameters.
@@ -102,21 +117,27 @@ class EVCouplingsGenerator(object):
             Float matrix of energy scores of size len(sequences) x 1
         """
 
-        if not self.is_discrete: 
+        if not self.is_discrete and not discrete_override: # it is continuous
+            
+            #print('RUNNING CONTINUOUS ENERGY CALC!!')
             batch_size = inp.shape[0]
             #print('inp.shape', inp.shape)
             
+            # finds a whole protein sequence. 
             if inp.shape[-1] == (self.AA_num*self.L): # assuming that it needs to be encoded first. 
+                assert inp.sum(-1) != self.L, "A onehot is very likely being fed into the continuous energy function and trying to be encoded!"
                 inp = self.encode(torch.tensor(inp.reshape(inp.shape[0], self.L, self.AA_num) ).float())
-            elif len(inp.shape) ==2: # assuming it needs to be reshaped
+            elif len(inp.shape) ==2 and inp.shape[-1]==(self.dim): # assuming it needs to be reshaped. 
                 inp = inp.reshape( batch_size, self.L, -1 )
             #print(inp.shape, self.L, type(inp))
             # the decoder assumes that input is of the shape [batch x L x properties]
-            inp = self.decode( torch.tensor(inp).float() ).numpy() # this will return [batch_size x log pdf of AAs.]
+            inp = self.decode( torch.tensor(inp).float() ).cpu().numpy() # this will return [batch_size x log pdf of AAs.]
 
             if argmax:
                 # set all of the probability to the most likely amino acid.
+                
                 assert len( inp.shape) ==3, 'wrong shape for the hard energy to be computed. ' 
+                
                 argm = np.argmax(inp, axis=2)
                 print(argm, argm.shape, type(argm))
                 # onehotting these: 
@@ -124,9 +145,11 @@ class EVCouplingsGenerator(object):
                 for ax in range(argm.shape[1]):
                     inp[np.arange(argm.shape[0]), ax, argm[:,ax]] = 1.0
             inp = inp.reshape( batch_size, -1)
-        else: 
+
+        else:  # here it is discrete. 
             # check what format the input is of. 
             # Convert it to either a softmax or argmax of shape batch_size x (protein_length*20)
+            
             assert len(inp.shape) == 2 or len(inp.shape) == 3, "Strange input dimensions. Needs to have 2 or 3 dimensions."
 
             # if it is an integer encoding, convert to onehot. 
@@ -140,10 +163,10 @@ class EVCouplingsGenerator(object):
             # Everything else should be in a one hot format by now. 
             # the additions here are to deal with small amounts of numerical instability. 
             if len(inp.shape) == 3 and int(inp[:,0,:].sum()+0.01) != inp.shape[0]: # the first position for all of the sequences should be 1. so their sum equals the batch size. 
-                inp = softmax(inp, axis=-1)
+                inp = self.softmax(inp, axis=-1)
             elif len(inp.shape) == 2 and (inp[:,:self.AA_num].sum(axis=1)+0.01).astype(int).sum() != inp.shape[0]:
                 inp = inp.reshape(inp.shape[0], self.L, self.AA_num)
-                inp = softmax(inp, axis=-1) 
+                inp = self.softmax(inp, axis=-1) 
                 #print('doing the softmax on this!!!', inp.shape)
 
             # flatten any unflat inputs: 
@@ -151,12 +174,15 @@ class EVCouplingsGenerator(object):
                 inp = inp.reshape(inp.shape[0], -1)
 
             # is the input a onehot or softmax?? 
+            
             assert (inp[:,:self.AA_num].sum(axis=1)+0.01).astype(int).sum() == inp.shape[0], "Either the softmax or onehot conversion has failed for this input: " + str(inp.shape)
 
-        H = ((inp.T*(self.J@inp.T))/2 ).T.sum(1) + inp@self.h
+        #print(inp.dtype, self.h.dtype, self.J.dtype)
+        H = self._numba_energy(inp.astype(np.float32), self.h, self.J)
 
         return H 
 
+@njit(parallel=True, fastmath=True)
 def hamiltonians(seqs, J, h):
     """
     Calculates the Hamiltonian of the global probability distribution P(A_1, ..., A_L)
