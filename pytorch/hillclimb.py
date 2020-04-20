@@ -29,6 +29,8 @@ class HillClimbing(object):
         self.AA_num = AA_num
         self.experiment_dir = experiment_dir
         self.save_trajectory = save_trajectory
+        # set random seed. 
+        np.random.seed(np.random.randint(0,3000,1)[0])
         
         if x0 is None: 
             x0 = self.make_rand_starters(self.nwalkers)
@@ -44,6 +46,8 @@ class HillClimbing(object):
         self.local_maxes =[]
         self.total_num_steps = 0 #useful if want to run more steps across multiple run() calls
         self.print_every = print_every
+        self.energy_output = self.experiment_dir+'MCMC_trajectories_energies.txt'
+        self.trajectory_output = self.experiment_dir+'MCMC_trajectories_seqs.txt'
 
     def make_rand_starters(self, batch_size):
         I = np.eye(self.AA_num)
@@ -100,6 +104,9 @@ class HillClimbing(object):
 
     def run(self, nsteps=1, verbose=0):
 
+        trajectory_output_file = open(self.trajectory_output, 'a')
+        energy_output_file = open(self.energy_output, 'a')
+
         for i in range(nsteps):
 
             self._hill_step()
@@ -110,59 +117,12 @@ class HillClimbing(object):
                 print('='*10)
 
             if self.save_trajectory: 
-                # save out the current sequences and energies that that the whole trajectory can later be plotted.
-                np.savetxt( open(self.experiment_dir+'hill_climb_trajectories_seqs.txt', 'a'), self.convert_to_position_ints())
-                np.savetxt( open(self.experiment_dir+'hill_climb_trajectories_energies.txt', 'a'), self.E)
-
+                np.savetxt( trajectory_output_file, self.convert_to_position_ints(), fmt='%i')#, )
+                np.savetxt( energy_output_file, self.E, fmt='%1.2f')
+                
             self.total_num_steps += 1
+        trajectory_output_file.close()
+        energy_output_file.close()
             
         #res = np.asarray(res)
         return self.local_maxes
-
-if __name__=='__main__':
-
-    start_time = time.time()
-
-    params = {'protein_length':6, 'is_discrete':True, 
-    'gaussian_cov_noise':None, 'nwalkers':64, 'print_every':50,
-    'experiment_name':'protein_length6_50K_steps'}
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Loading in EVCouplings model 
-    focus_seqs = read_fa('EVCouplingsStuff/DYR_ECOLI_1_b0.5.a2m_trimmed.fa')
-    evc_model = CouplingsModel('EVCouplingsStuff/DYR.model')
-
-    # extracting the model parameters used to determine the evolutionary hamiltonian
-    h = evc_model.h_i
-    J = evc_model.J_ij
-
-    if params['protein_length'] > 0:
-        h = h[0:params['protein_length'], :]
-        J = J[0:params['protein_length'], 0:params['protein_length'], :,:]
-            
-    # processing the natural sequences: 
-    # first by converting amino acids into integers and also onehots. 
-    enc_seqs=[]
-    oh = []
-    AA=h.shape[1] # number of amino acids
-    for seq in focus_seqs['seq']:
-        enc_seq = np.asarray(encode_aa(seq, evc_model.alphabet_map))
-        if params['protein_length'] > 0: 
-            enc_seq = enc_seq[:params['protein_length']]
-        enc_seqs.append(enc_seq) 
-        oh.append(onehot(enc_seq,AA)) # this could be made much more efficient with tensorflow operations. 
-    enc_seqs = np.asarray(enc_seqs)
-    oh=np.asarray(oh) # of shape: [batch x L x AA]
-    N = oh.shape[0] # batch size
-    L = oh.shape[1] # length of the protein
-    
-    print('number and dimensions of the natural sequences', oh.shape)
-
-    # loading in the environment class, used to score the evolutionary hamiltonians
-    gen_model = EVCouplingsGenerator(L, AA, h, J, device, params['is_discrete'], gaussian_cov_noise = params['gaussian_cov_noise'])
-
-    hill_climber = HillClimbing(gen_model, params['experiment_name'], save_trajectory=False, 
-        nwalkers=params['nwalkers'], print_every=params['print_every'])
-
-    local_maxes = hill_climber.run(50)

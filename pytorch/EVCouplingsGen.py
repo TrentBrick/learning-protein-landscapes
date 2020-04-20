@@ -81,21 +81,22 @@ class EVCouplingsGenerator(object):
         return evh
 
     @staticmethod
-    @njit(fastmath=True)
+    #@njit(fastmath=True)
     def softmax(inp ,axis=1):
         return np.exp(inp)/np.sum(np.exp(inp), axis=axis, keepdims=True)
 
-    @staticmethod
+    '''@staticmethod
     #@njit(fastmath=True)
     def _numba_energy(inp, h, J, full_batch):
         if full_batch: 
             return ((inp * np.einsum('ij,bnj->bni',J,inp ))/2).sum(-1)+inp@h
         else: 
-            return ((inp.T*(J@inp.T))/2 ).T.sum(1) + inp@h
+            return ((inp.T*(J@inp.T))/2 ).T.sum(1) + inp@h'''
 
     # optimized because we know it is flattened one hots coming in. 
     def hill_energy(self, inp, full_batch=False):
-        return self._numba_energy(inp.astype(np.float32), self.h, self.J, full_batch).astype(np.float)
+        return ((inp.T*(self.J@inp.T))/2 ).T.sum(1) + inp@self.h
+        #return self._numba_energy(inp.astype(np.float32), self.h, self.J, full_batch).astype(np.float)
 
     def energy(self, inp, argmax=False, discrete_override = False):
         """
@@ -185,7 +186,7 @@ class EVCouplingsGenerator(object):
 
         return H 
 
-@njit(parallel=True, fastmath=True)
+#@njit(parallel=True, fastmath=True)
 def hamiltonians(seqs, J, h):
     """
     Calculates the Hamiltonian of the global probability distribution P(A_1, ..., A_L)

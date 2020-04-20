@@ -2,8 +2,6 @@ import argparse
 from sklearn.model_selection import ParameterGrid
 import copy
 import os
-import multiprocessing
-multiprocessing.set_start_method('spawn', True)
 
 def buildBool(arg):
     # convert strings to booleans
@@ -24,10 +22,10 @@ def initialize_parameters():
                         default=['NoNameGiven'],
                         help='Name to use for the experiment directory of outputs')
     parser.add_argument('--run_model', type=str, action='store', nargs='+', 
-                        default=['evCouplings.py'],
+                        default=['main_hill_MCMC.py'],
                         help='select the model run script to use for training. Currently only EV Couplings. ')
     parser.add_argument('--is_discrete', type=buildBool, action='store', nargs='+', 
-                        default=[False],
+                        default=[True],
                         help='Need to state if want to use the discrete version of the model or not.')
     parser.add_argument('--gaussian_cov_noise', type=float, action='store', nargs='+', 
                         default=[5.0],
@@ -112,6 +110,26 @@ def initialize_parameters():
     parser.add_argument('--random_seed', type=int, action='store', nargs='+',
                         default = [0],
                         help='the random seed used. If set to 0 it will choose a random number.')
+    
+    # for the hill climber
+    parser.add_argument('--ncores', type=int, action='store', nargs='+',
+                        default = [1],
+                        help='number of cores to use')
+    parser.add_argument('--nsteps', type=int, action='store', nargs='+',
+                        default = [100],
+                        help='number of cores to use')
+    parser.add_argument('--save_trajectory', type=buildBool, action='store', nargs='+',
+                        default = [True],
+                        help='save out the whole trajectory')
+    parser.add_argument('--print_every', type=int, action='store', nargs='+',
+                        default = [50],
+                        help='save out the whole trajectory')
+    parser.add_argument('--nwalkers', type=int, action='store', nargs='+',
+                        default = [64],
+                        help='walkers for hill and MCMC')
+    parser.add_argument('--hill_or_MCMC', type=str, action='store', nargs='+',
+                        default = ['hill'],
+                        help='want to run hill climbing or MCMC?')
 
     args = parser.parse_args()
     run_model_str = args.run_model[0]
@@ -128,6 +146,10 @@ def initialize_parameters():
     elif run_model_str == 'double_well_test.py':
         from double_well_test import main
         func_to_call = main
+    elif run_model_str == 'main_hill_MCMC.py':
+        from main_hill_MCMC import main
+        func_to_call = main
+    
     '''elif run_model_str == 'basic_evCouplings.py':
         from basic_evCouplings import main
         func_to_call = main'''

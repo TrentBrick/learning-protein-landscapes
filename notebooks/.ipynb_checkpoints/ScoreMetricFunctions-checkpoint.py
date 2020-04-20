@@ -1,9 +1,18 @@
 
 
 import copy
-
+from evcouplings import align
+import numpy as np
 def single_ham(seq, mat):
     return 1 - ((seq == mat).sum(-1) / len(seq))
+
+def msa_weights(oh, theta=0.8, pseudocount=0):
+    #i = pairwise_identity(oh)
+    #neighbors = msa_neighbors(oh, theta, pseudocount)
+    neighbors = align.alignment.num_cluster_members(oh, theta)
+    #(i > theta).sum(0)/2
+    w = 1 / (neighbors + pseudocount)
+    return(w, neighbors)
 
 def score_diversity_metric(seqs, energies, theta, E_min, calc_Neff=False, color_clusts=True):
     # if color_clusts it slows things down, needs to do theta for whole set each time. 
