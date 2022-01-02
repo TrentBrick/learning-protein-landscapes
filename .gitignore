@@ -10,4 +10,4 @@ pytorch/experiments/
 .DS_Store
 *.pyc
 *.tex
-
+.gitignore
